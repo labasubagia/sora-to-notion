@@ -1,4 +1,5 @@
 from sora import (
+    delete_all_empty_tasks,
     save_dataset_from_generations,
     download_all_images,
     delete_generations_already_uploaded_to_notion,
@@ -49,6 +50,12 @@ def sora_cleanup_trash(dataset: str):
     print("✅ Cleanup completed.\n")
 
 
+def sora_cleanup_tasks():
+    print("🗑️  Deleting all empty tasks...")
+    delete_all_empty_tasks()
+    print("✅ All empty tasks deleted.\n")
+
+
 if __name__ == "__main__":
     sora_upload_to_notion(
         dataset="generations.csv",
@@ -59,3 +66,5 @@ if __name__ == "__main__":
     )
 
     sora_cleanup_trash(dataset="trash_generations.csv")
+
+    sora_cleanup_tasks()

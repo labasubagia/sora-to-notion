@@ -20,6 +20,45 @@ AUTHORIZATION_TOKEN = config.get("SORA_AUTHORIZATION_TOKEN")
 USER_AGENT = config.get("SORA_USER_AGENT")
 
 
+def archive_task(task_id: str):
+    """
+    Trash in Sora
+    """
+    command = [
+        "curl",
+        "-s",
+        "-L",
+        "-X",
+        "POST",
+        f"{BASE_URL}/backend/video_gen/{task_id}/archive",
+        "-H",
+        f"authorization: Bearer {AUTHORIZATION_TOKEN}",
+        "-H",
+        f"user-agent: {USER_AGENT}",
+    ]
+    result = subprocess.run(command, capture_output=True, text=True)
+    json_data = json.loads(result.stdout)
+    return json_data
+
+
+def delete_task(task_id: str):
+    command = [
+        "curl",
+        "-s",
+        "-L",
+        "-X",
+        "DELETE",
+        f"{BASE_URL}/backend/video_gen/{task_id}",
+        "-H",
+        f"authorization: Bearer {AUTHORIZATION_TOKEN}",
+        "-H",
+        f"user-agent: {USER_AGENT}",
+    ]
+    result = subprocess.run(command, capture_output=True, text=True)
+    json_data = json.loads(result.stdout)
+    return json_data
+
+
 def fetch_lists_tasks(
     task_limit=20,
     after_task_id=None,
@@ -72,6 +111,48 @@ def fetch_all_lists_tasks(
             print(f"{request_count} Error fetching tasks, retrying..., error: {e}")
 
     return all_tasks
+
+
+def delete_all_empty_tasks(max_workers=10):
+    """
+    Delete all tasks that have no generations.
+
+    :param max_workers: max parallel workers for deleting tasks
+    :return: None
+    """
+    empty_tasks = []
+    tasks = fetch_all_lists_tasks(task_limit=100, archived=False)
+    for task in tasks:
+        if len(task.get("generations", [])) == 0:
+            task_id = task.get("id")
+            empty_tasks.append(task_id)
+    print()
+    processed = 0
+    total = len(empty_tasks)
+    print(f"Total failed tasks to delete: {total}\n")
+
+    def delete(task_id):
+        nonlocal processed
+        while True:
+            try:
+                archive_data = archive_task(task_id)
+                deleted_data = delete_task(task_id)
+                processed += 1
+                print(
+                    f"[{msg_prefix_progress(processed, total)}] task {task_id} deleted\n"
+                    f"archive: {json.dumps(archive_data)}\n"
+                    f"delete: {json.dumps(deleted_data)}\n"
+                )
+                break
+            except Exception as e:
+                print(
+                    f"[{msg_prefix_progress(processed, total)}] task {task_id} failed to delete: {e}, retrying..."
+                )
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(delete, id) for id in empty_tasks]
+        for future in as_completed(futures):
+            future.result()
 
 
 def save_dataset_from_generations(
