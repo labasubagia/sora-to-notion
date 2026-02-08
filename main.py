@@ -51,6 +51,7 @@ if __name__ == "__main__":
     sora_upload_to_notion(
         dataset=dataset,
         image_folder=image_folder,
+        db_id=db_id,
         upload_to_notion=False,
         remove_in_sora=False,
     )
