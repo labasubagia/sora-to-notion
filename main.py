@@ -36,7 +36,7 @@ def sora_upload_to_notion(
 
 
 def sora_cleanup_trash(dataset: str):
-    print("Saving dataset from generations (archived=True)...")
+    print("Saving dataset from generations in trash folder...")
     save_dataset_from_generations(dataset=dataset, archived=True)
 
     print("\nDeleting all generations in trash...")
@@ -44,15 +44,11 @@ def sora_cleanup_trash(dataset: str):
 
 
 if __name__ == "__main__":
-    dataset = "generations.csv"
-    image_folder = "images"
-    db_id = DB_ID
-
     sora_upload_to_notion(
-        dataset=dataset,
-        image_folder=image_folder,
-        db_id=db_id,
-        upload_to_notion=False,
+        dataset="generations.csv",
+        image_folder="images",
+        db_id=DB_ID,
+        upload_to_notion=True,
         remove_in_sora=False,
     )
 
