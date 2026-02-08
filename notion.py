@@ -114,7 +114,11 @@ def add_page_to_db(file_path, prompt, model="Sora", face="_original_"):
 
 
 def upload_all_images_to_notion(dataset, db_id, image_folder, max_workers=10):
-    df = pd.read_csv(os.path.join(dataset))
+    df = (
+        pd.read_csv(os.path.join(dataset))
+        .sort_values(by="created_at", ascending=True)
+        .reset_index(drop=True)
+    )
     processed = 0
     total = len(df)
 
