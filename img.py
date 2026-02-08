@@ -1,5 +1,4 @@
 import os
-import glob
 import pandas as pd
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
@@ -19,10 +18,19 @@ def edit_png_info(file_path, payload: dict[str, str], overwrite=True):
         img.save(file_path, pnginfo=metadata)
 
 
-def add_prompt_to_all_images(folder_path="generations", max_workers=10):
-    files = glob.glob(os.path.join(folder_path, "*.csv"))
-    df_list = [pd.read_csv(file) for file in files]
-    df = pd.concat(df_list, ignore_index=True)
+def add_prompt_to_all_images(dataset, max_workers=10):
+    """
+    This function adds prompt text metadata to all PNG images listed in the given dataset CSV file.
+
+    How to read file result:
+
+    `$ exiftool -Comment <file_path>`
+
+    Example:
+
+    `$ exiftool -Comment images/gen_01k2pct920ebyte8a69jyds5ds.png`
+    """
+    df = pd.read_csv(os.path.join(dataset))
 
     total = len(df)
     processed = 0
@@ -48,7 +56,3 @@ def add_prompt_to_all_images(folder_path="generations", max_workers=10):
         futures = [executor.submit(add_prompt, row) for (_, row) in df.iterrows()]
         for future in as_completed(futures):
             future.result()
-
-
-if __name__ == "__main__":
-    add_prompt_to_all_images()
