@@ -1,7 +1,6 @@
 from dotenv import dotenv_values
 from datetime import datetime, timezone
 import pandas as pd
-import requests
 import os
 import asyncio
 import aiohttp
@@ -21,44 +20,47 @@ headers = {
 }
 
 
-def get_conversations(
+async def get_conversations(
     offset=0, limit=100, is_archived=False, is_starred=False, order="updated"
 ):
-    response = requests.get(
-        f"{BASE_URL}/conversations",
-        headers=headers,
-        params={
-            "offset": offset,
-            "limit": limit,
-            "order": order,
-            "is_archived": str(is_archived).lower(),
-            "is_starred": str(is_starred).lower(),
-        },
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"{BASE_URL}/conversations",
+            headers=headers,
+            params={
+                "offset": offset,
+                "limit": limit,
+                "order": order,
+                "is_archived": str(is_archived).lower(),
+                "is_starred": str(is_starred).lower(),
+            },
+        ) as response:
+            response.raise_for_status()
+            data = await response.json()
+            return data
 
 
-def get_conversation_details(conversation_id: str):
-    response = requests.get(
-        f"{BASE_URL}/conversation/{conversation_id}",
-        headers=headers,
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data
+async def get_conversation_details(conversation_id: str):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"{BASE_URL}/conversation/{conversation_id}",
+            headers=headers,
+        ) as response:
+            response.raise_for_status()
+            data = await response.json()
+            return data
 
 
-def get_image_generations(limit=100):
-    response = requests.get(
-        f"{BASE_URL}/my/recent/image_gen",
-        headers=headers,
-        params={"limit": limit},
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data
+async def get_image_generations(limit=100):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"{BASE_URL}/my/recent/image_gen",
+            headers=headers,
+            params={"limit": limit},
+        ) as response:
+            response.raise_for_status()
+            data = await response.json()
+            return data
 
 
 def get_prompt_from_image_node_in_conversation(data, start_node_id):
@@ -78,39 +80,43 @@ def get_prompt_from_image_node_in_conversation(data, start_node_id):
     return None
 
 
-def save_dataset_of_image_generations(dataset: str, limit=100):
+async def save_dataset_of_image_generations(dataset: str, limit=100):
     """
-    Save dataset of image generations to CSV file.
+    Save dataset of image generations to CSV file asynchronously.
     """
     generation_list = []
-    data = get_image_generations(limit=limit)
+    data = await get_image_generations(limit=limit)
     total = len(data.get("items", []))
     processed = 0
     print("Fetched", total, "image generations.")
-    for img_gen in data.get("items", []):
-        detail = get_conversation_details(img_gen["conversation_id"])
+
+    async def fetch_generation_details(img_gen):
+        nonlocal processed
+        detail = await get_conversation_details(img_gen["conversation_id"])
         prompt = get_prompt_from_image_node_in_conversation(
             detail, img_gen["message_id"]
         )
         created_at = datetime.fromtimestamp(
             img_gen["created_at"], tz=timezone.utc
         ).isoformat(timespec="microseconds")
-        generation_list.append(
-            {
-                "created_at": created_at,
-                "id": img_gen["id"],
-                "conversation_id": img_gen["conversation_id"],
-                "message_id": img_gen["message_id"],
-                "url": img_gen["url"],
-                "prompt": prompt,
-            }
-        )
         processed += 1
         print(f"[{processed}/{total}] info img ID {img_gen['id']} added.")
+        return {
+            "created_at": created_at,
+            "id": img_gen["id"],
+            "conversation_id": img_gen["conversation_id"],
+            "message_id": img_gen["message_id"],
+            "url": img_gen["url"],
+            "prompt": prompt,
+        }
+
+    generation_list = await asyncio.gather(
+        *[fetch_generation_details(img_gen) for img_gen in data.get("items", [])]
+    )
 
     df = pd.DataFrame(generation_list)
     df = df.sort_values(by="created_at", ascending=True).reset_index(drop=True)
-    df.to_csv("chatgpt_generations.csv", index=False)
+    df.to_csv(dataset, index=False)
 
 
 async def download_all_images(
@@ -157,18 +163,16 @@ async def download_all_images(
         )
 
 
-def chatgpt_upload_to_notion(
+async def chatgpt_upload_to_notion(
     dataset: str, image_folder: str, db_id, upload_to_notion=True
 ):
     print("📊 Saving dataset from image generations...")
-    save_dataset_of_image_generations(dataset=dataset)
+    await save_dataset_of_image_generations(dataset=dataset)
     print("✅ Dataset saved.\n")
     print("🖼️ Downloading all images...")
-    asyncio.run(
-        download_all_images(
-            dataset=dataset,
-            download_folder=image_folder,
-        )
+    await download_all_images(
+        dataset=dataset,
+        download_folder=image_folder,
     )
     print("✅ All images downloaded.\n")
     if upload_to_notion:
@@ -182,9 +186,11 @@ def chatgpt_upload_to_notion(
 
 
 if __name__ == "__main__":
-    chatgpt_upload_to_notion(
-        dataset="chatgpt_generations.csv",
-        image_folder="chatgpt_images",
-        db_id=NOTION_DB_ID,
-        upload_to_notion=True,
+    asyncio.run(
+        chatgpt_upload_to_notion(
+            dataset="chatgpt_generations.csv",
+            image_folder="chatgpt_images",
+            db_id=NOTION_DB_ID,
+            upload_to_notion=True,
+        )
     )
