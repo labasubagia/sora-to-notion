@@ -5,7 +5,11 @@ import os
 import asyncio
 import aiohttp
 from util import msg_prefix_progress
-from notion import upload_all_images_to_notion, DB_ID as NOTION_DB_ID
+from notion import (
+    upload_all_images_to_notion,
+    is_page_exists_in_db,
+    DB_ID as NOTION_DB_ID,
+)
 
 config = dotenv_values()
 
@@ -51,6 +55,18 @@ async def get_conversation_details(conversation_id: str):
             return data
 
 
+async def delete_conversation(conversation_id: str):
+    async with aiohttp.ClientSession() as session:
+        async with session.patch(
+            f"{BASE_URL}/conversation/{conversation_id}",
+            headers=headers,
+            json={"is_visible": False},
+        ) as response:
+            response.raise_for_status()
+            data = await response.json()
+            return data
+
+
 async def get_image_generations(limit=100):
     async with aiohttp.ClientSession() as session:
         async with session.get(
@@ -63,9 +79,30 @@ async def get_image_generations(limit=100):
             return data
 
 
-def get_prompt_from_image_node_in_conversation(data, start_node_id):
+def get_conversation_mapping_key_by_asset_pointer(data, asset_pointer):
+    for key, node in data.get("mapping", {}).items():
+        message = node.get("message")
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if not isinstance(content, dict):
+            continue
+        parts = content.get("parts", [])
+        if not isinstance(parts, list):
+            continue
+        for part in parts:
+            if isinstance(part, dict) and part.get("asset_pointer") == asset_pointer:
+                return key
+    return None
+
+
+def get_prompt_from_image_node_in_conversation(data, start_node_id, asset_pointer):
     mapping = data["mapping"]
     current_id = start_node_id
+    if current_id not in mapping:
+        current_id = get_conversation_mapping_key_by_asset_pointer(data, asset_pointer)
+        if current_id is None:
+            return None
 
     while current_id:
         node = mapping[current_id]
@@ -94,18 +131,21 @@ async def save_dataset_of_image_generations(dataset: str, limit=100):
         nonlocal processed
         detail = await get_conversation_details(img_gen["conversation_id"])
         prompt = get_prompt_from_image_node_in_conversation(
-            detail, img_gen["message_id"]
+            detail, img_gen["message_id"], img_gen["asset_pointer"]
         )
         created_at = datetime.fromtimestamp(
             img_gen["created_at"], tz=timezone.utc
         ).isoformat(timespec="microseconds")
         processed += 1
-        print(f"[{processed}/{total}] info img ID {img_gen['id']} added.")
+        print(
+            f"[{msg_prefix_progress(processed, total)}] info img ID {img_gen['id']} added."
+        )
         return {
             "created_at": created_at,
             "id": img_gen["id"],
             "conversation_id": img_gen["conversation_id"],
             "message_id": img_gen["message_id"],
+            "asset_pointer": img_gen["asset_pointer"],
             "url": img_gen["url"],
             "prompt": prompt,
         }
@@ -114,8 +154,21 @@ async def save_dataset_of_image_generations(dataset: str, limit=100):
         *[fetch_generation_details(img_gen) for img_gen in data.get("items", [])]
     )
 
-    df = pd.DataFrame(generation_list)
-    df = df.sort_values(by="created_at", ascending=True).reset_index(drop=True)
+    if len(generation_list) == 0:
+        df = pd.DataFrame(
+            columns=[
+                "created_at",
+                "id",
+                "conversation_id",
+                "message_id",
+                "url",
+                "prompt",
+            ]
+        )
+    else:
+        df = pd.DataFrame(generation_list)
+        df = df.sort_values(by="created_at", ascending=True).reset_index(drop=True)
+
     df.to_csv(dataset, index=False)
 
 
@@ -163,6 +216,38 @@ async def download_all_images(
         )
 
 
+async def delete_conversation_of_image_generation_uploaded_to_notion(
+    dataset="chatgpt_generations.csv", db_id=NOTION_DB_ID
+):
+    df = pd.read_csv(os.path.join(dataset))
+
+    total = len(df)
+    processed = 0
+
+    async def delete_if_uploaded(row):
+        nonlocal processed
+        try:
+            file_name = f"{row['id']}.png"
+            exists = await is_page_exists_in_db(db_id, file_name)
+            if not exists:
+                processed += 1
+                print(
+                    f"[{msg_prefix_progress(processed, total)}] {file_name} not found in Notion, skipped."
+                )
+                return
+            await delete_conversation(row["conversation_id"])
+            processed += 1
+            print(
+                f"[{msg_prefix_progress(processed, total)}] Conversation ID {row['conversation_id']} deleted."
+            )
+        except Exception as e:
+            print(
+                f"[{msg_prefix_progress(processed, total)}] Conversation ID {row['conversation_id']} failed: {e}"
+            )
+
+    await asyncio.gather(*[delete_if_uploaded(row) for _, row in df.iterrows()])
+
+
 async def chatgpt_upload_to_notion(
     dataset: str, image_folder: str, db_id, upload_to_notion=True
 ):
@@ -177,20 +262,9 @@ async def chatgpt_upload_to_notion(
     print("✅ All images downloaded.\n")
     if upload_to_notion:
         print("📤 Uploading all images to Notion...")
-        upload_all_images_to_notion(
+        await upload_all_images_to_notion(
             dataset=dataset,
             db_id=db_id,
             image_folder=image_folder,
         )
         print("✅ All images uploaded to Notion.\n")
-
-
-if __name__ == "__main__":
-    asyncio.run(
-        chatgpt_upload_to_notion(
-            dataset="chatgpt_generations.csv",
-            image_folder="chatgpt_images",
-            db_id=NOTION_DB_ID,
-            upload_to_notion=True,
-        )
-    )
