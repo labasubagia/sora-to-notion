@@ -1,15 +1,16 @@
-from dotenv import dotenv_values
-from datetime import datetime, timezone
-import pandas as pd
-import os
 import asyncio
+import os
+from datetime import datetime, timezone
+
 import aiohttp
-from util import msg_prefix_progress
+import pandas as pd
+from dotenv import dotenv_values
+
 from notion import (
-    upload_all_images_to_notion,
     is_page_exists_in_db,
-    DB_ID as NOTION_DB_ID,
+    upload_all_images_to_notion,
 )
+from util import MAX_RETRIES, get_output_path, msg_prefix_progress
 
 config = dotenv_values()
 
@@ -129,26 +130,37 @@ async def save_dataset_of_image_generations(dataset: str, limit=100):
 
     async def fetch_generation_details(img_gen):
         nonlocal processed
-        detail = await get_conversation_details(img_gen["conversation_id"])
-        prompt = get_prompt_from_image_node_in_conversation(
-            detail, img_gen["message_id"], img_gen["asset_pointer"]
-        )
-        created_at = datetime.fromtimestamp(
-            img_gen["created_at"], tz=timezone.utc
-        ).isoformat(timespec="microseconds")
-        processed += 1
-        print(
-            f"[{msg_prefix_progress(processed, total)}] info img ID {img_gen['id']} added."
-        )
-        return {
-            "created_at": created_at,
-            "id": img_gen["id"],
-            "conversation_id": img_gen["conversation_id"],
-            "message_id": img_gen["message_id"],
-            "asset_pointer": img_gen["asset_pointer"],
-            "url": img_gen["url"],
-            "prompt": prompt,
-        }
+        for _ in range(MAX_RETRIES):
+            try:
+                detail = await get_conversation_details(img_gen["conversation_id"])
+                prompt = get_prompt_from_image_node_in_conversation(
+                    detail, img_gen["message_id"], img_gen["asset_pointer"]
+                )
+                created_at = datetime.fromtimestamp(
+                    img_gen["created_at"], tz=timezone.utc
+                ).isoformat(timespec="microseconds")
+                processed += 1
+                print(
+                    f"[{msg_prefix_progress(processed, total)}] info img ID {img_gen['id']} added."
+                )
+                return {
+                    "created_at": created_at,
+                    "id": img_gen["id"],
+                    "conversation_id": img_gen["conversation_id"],
+                    "message_id": img_gen["message_id"],
+                    "asset_pointer": img_gen["asset_pointer"],
+                    "url": img_gen["url"],
+                    "prompt": prompt,
+                }
+            except Exception as e:
+                print(
+                    f"[{msg_prefix_progress(processed, total)}] info img ID {img_gen['id']} fetch error: {e}, retrying..."
+                )
+        else:
+            print(
+                f"[{msg_prefix_progress(processed, total)}] info img ID {img_gen['id']} failed after {MAX_RETRIES} retries"
+            )
+            raise Exception("Failed to fetch generation details after maximum retries")
 
     generation_list = await asyncio.gather(
         *[fetch_generation_details(img_gen) for img_gen in data.get("items", [])]
@@ -169,45 +181,52 @@ async def save_dataset_of_image_generations(dataset: str, limit=100):
         df = pd.DataFrame(generation_list)
         df = df.sort_values(by="created_at", ascending=True).reset_index(drop=True)
 
-    df.to_csv(dataset, index=False)
+    df.to_csv(get_output_path(dataset), index=False)
 
 
 async def download_all_images(
-    dataset="chatgpt_generations.csv",
-    download_folder="chatgpt_images",
+    dataset,
+    download_folder,
 ):
     """
     Download all images from the dataset CSV file asynchronously.
     """
-    df = pd.read_csv(os.path.join(dataset))
+    df = pd.read_csv(get_output_path(dataset))
 
     total = len(df)
     processed = 0
 
-    if not os.path.exists(download_folder):
-        os.makedirs(download_folder)
-
     async def download_image(session, row):
         nonlocal processed
-        file_path = os.path.join(download_folder, f"{row['id']}.png")
-        if not os.path.exists(file_path):
+        file_name = f"{row['id']}.png"
+        file_path = get_output_path(os.path.join(download_folder, file_name))
+
+        if os.path.exists(file_path):
+            processed += 1
+            print(
+                f"[{msg_prefix_progress(processed, total)}] {file_path} already exists, skipped."
+            )
+            return
+
+        for _ in range(MAX_RETRIES):
             try:
                 async with session.get(row["url"], headers=headers) as response:
                     response.raise_for_status()
                     with open(file_path, "wb") as f:
                         f.write(await response.read())
-                processed += 1
-                print(
-                    f"[{msg_prefix_progress(processed, total)}] {file_path} downloaded."
-                )
+                        processed += 1
+                        print(
+                            f"[{msg_prefix_progress(processed, total)}] {file_path} downloaded."
+                        )
+                        return
             except Exception as e:
                 print(
-                    f"[{msg_prefix_progress(processed, total)}] {file_path} failed: {e}"
+                    f"[{msg_prefix_progress(processed, total)}] {file_path} download error: {e}, retrying..."
                 )
         else:
             processed += 1
             print(
-                f"[{msg_prefix_progress(processed, total)}] {file_path} already exists, skipped."
+                f"[{msg_prefix_progress(processed, total)}] {file_path} failed after {MAX_RETRIES} retries"
             )
 
     async with aiohttp.ClientSession() as session:
@@ -216,36 +235,44 @@ async def download_all_images(
         )
 
 
-async def delete_conversation_of_image_generation_uploaded_to_notion(
-    dataset="chatgpt_generations.csv", db_id=NOTION_DB_ID
-):
-    df = pd.read_csv(os.path.join(dataset))
+async def delete_conversation_of_image_generation_uploaded_to_notion(dataset, db_id):
+    df = pd.read_csv(get_output_path(dataset))
+    df = df.drop_duplicates(subset=["conversation_id"])
 
     total = len(df)
     processed = 0
 
-    async def delete_if_uploaded(row):
+    async def delete(row):
         nonlocal processed
-        try:
-            file_name = f"{row['id']}.png"
-            exists = await is_page_exists_in_db(db_id, file_name)
-            if not exists:
+        for _ in range(MAX_RETRIES):
+            try:
+                file_name = f"{row['id']}.png"
+
+                exists = await is_page_exists_in_db(db_id, file_name)
+                if not exists:
+                    processed += 1
+                    print(
+                        f"[{msg_prefix_progress(processed, total)}] {file_name} not found in Notion, skipped."
+                    )
+                    return
+
+                await delete_conversation(row["conversation_id"])
                 processed += 1
                 print(
-                    f"[{msg_prefix_progress(processed, total)}] {file_name} not found in Notion, skipped."
+                    f"[{msg_prefix_progress(processed, total)}] Conversation ID {row['conversation_id']} deleted."
                 )
                 return
-            await delete_conversation(row["conversation_id"])
+            except Exception as e:
+                print(
+                    f"[{msg_prefix_progress(processed, total)}] Conversation ID {row['conversation_id']} delete error: {e}, retrying..."
+                )
+        else:
             processed += 1
             print(
-                f"[{msg_prefix_progress(processed, total)}] Conversation ID {row['conversation_id']} deleted."
-            )
-        except Exception as e:
-            print(
-                f"[{msg_prefix_progress(processed, total)}] Conversation ID {row['conversation_id']} failed: {e}"
+                f"[{msg_prefix_progress(processed, total)}] Conversation ID {row['conversation_id']} failed after {MAX_RETRIES} retries"
             )
 
-    await asyncio.gather(*[delete_if_uploaded(row) for _, row in df.iterrows()])
+    await asyncio.gather(*[delete(row) for _, row in df.iterrows()])
 
 
 async def upload_to_notion(

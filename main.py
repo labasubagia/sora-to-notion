@@ -1,10 +1,11 @@
-import sora
-import chatgpt
 import asyncio
-import typer
-from notion import DB_ID as NOTION_DB_ID
 from typing import Annotated
 
+import typer
+
+import chatgpt
+import sora
+from notion import DB_ID as NOTION_DB_ID
 
 app = typer.Typer()
 
@@ -13,10 +14,10 @@ app = typer.Typer()
 def sora_upload_to_notion(
     dataset: Annotated[
         str, typer.Option(help="Path to the dataset CSV file")
-    ] = "generations.csv",
+    ] = "sora_generations.csv",
     image_folder: Annotated[
         str, typer.Option(help="Path to the folder containing images")
-    ] = "images",
+    ] = "sora_images",
     db_id: Annotated[str, typer.Option(help="Notion Database ID")] = NOTION_DB_ID,
     upload_to_notion: Annotated[
         bool, typer.Option(help="Whether to upload to Notion")
@@ -38,7 +39,7 @@ def sora_upload_to_notion(
 def sora_cleanup_trash(
     dataset: Annotated[
         str, typer.Option(help="Path to the dataset CSV file")
-    ] = "generations.csv",
+    ] = "sora_trash_generations.csv",
 ):
     sora.cleanup_trash(dataset)
 

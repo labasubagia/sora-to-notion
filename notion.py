@@ -1,9 +1,11 @@
-import aiohttp
 import asyncio
 import os
+
+import aiohttp
 import pandas as pd
-from util import msg_prefix_progress
 from dotenv import dotenv_values
+
+from util import MAX_RETRIES, get_output_path, msg_prefix_progress
 
 config = dotenv_values()
 
@@ -67,13 +69,17 @@ async def is_page_exists_in_db(
 
 
 async def create_upload_img(file_path: str):
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+    file_name = os.path.basename(file_path)
+
     async with aiohttp.ClientSession() as session:
         async with session.post(
             f"{BASE_URL}/v1/file_uploads",
             headers=headers,
             json={
                 "mode": "single_part",
-                "filename": os.path.basename(file_path),
+                "filename": file_name,
                 "content_type": "image/png",
             },
         ) as response:
@@ -82,9 +88,12 @@ async def create_upload_img(file_path: str):
 
 
 async def send_upload_img(file_upload_id: str, file_path: str):
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+    file_name = os.path.basename(file_path)
+
     async with aiohttp.ClientSession() as session:
         with open(file_path, "rb") as f:
-            file_name = os.path.basename(file_path)
             data = aiohttp.FormData()
             data.add_field("file", f, filename=file_name, content_type="image/png")
             async with session.post(
@@ -100,9 +109,13 @@ async def send_upload_img(file_upload_id: str, file_path: str):
 
 
 async def add_page_to_db(db_id, file_path, prompt, model="Sora", face="_original_"):
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
     file_name = os.path.basename(file_path)
+
     create_upload_res = await create_upload_img(file_path)
     send_upload_res = await send_upload_img(create_upload_res["id"], file_path)
+
     async with aiohttp.ClientSession() as session:
         async with session.post(
             f"{BASE_URL}/v1/pages",
@@ -131,36 +144,45 @@ async def add_page_to_db(db_id, file_path, prompt, model="Sora", face="_original
 
 
 async def upload_all_images_to_notion(dataset, db_id, image_folder):
-    df = pd.read_csv(os.path.join(dataset))
+    df = pd.read_csv(get_output_path(dataset))
     processed = 0
     total = len(df)
 
     async def upload(generation_id, prompt):
         nonlocal processed
         file_name = f"{generation_id}.png"
-        file_path = os.path.join(image_folder, file_name)
-        if os.path.exists(file_path):
-            # while True:
+        file_path = get_output_path(os.path.join(image_folder, file_name))
+        if not os.path.exists(file_path):
+            processed += 1
+            print(
+                f"[{msg_prefix_progress(processed, total)}] {file_path} not found, skipped."
+            )
+            return
+
+        for _ in range(MAX_RETRIES):
             try:
                 if await is_page_exists_in_db(db_id, file_name):
                     processed += 1
                     print(
-                        f"[{msg_prefix_progress(processed, total)}] {file_name} skipped, already exists",
+                        f"[{msg_prefix_progress(processed, total)}] {file_path} skipped, already exists",
                     )
                 else:
                     await add_page_to_db(db_id, file_path, prompt, model="Sora")
                     processed += 1
                     print(
-                        f"[{msg_prefix_progress(processed, total)}] {file_name} uploaded"
+                        f"[{msg_prefix_progress(processed, total)}] {file_path} uploaded"
                     )
-                # break
+                return
             except Exception as e:
                 print(
-                    f"[{msg_prefix_progress(processed, total)}] {file_name} failed: {e}"
+                    f"[{msg_prefix_progress(processed, total)}] {file_path} failed: {e}"
                 )
+        else:
+            processed += 1
+            print(
+                f"[{msg_prefix_progress(processed, total)}] {file_path} failed after {MAX_RETRIES} retries"
+            )
 
-    upload_tasks = []
-    for _, row in df.iterrows():
-        upload_tasks.append((row["id"], row["prompt"]))
-
-    await asyncio.gather(*[upload(id, prompt) for (id, prompt) in upload_tasks])
+    await asyncio.gather(
+        *[upload(row["id"], row["prompt"]) for (_, row) in df.iterrows()]
+    )

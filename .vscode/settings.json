@@ -1,0 +1,8 @@
+{
+    "editor.codeActionsOnSave": {
+        "source.fixAll.ruff": "always",
+        "source.organizeImports.ruff": "always",
+        "source.sort.json": "always",
+        "source.unusedImports": "always"
+    }
+}
