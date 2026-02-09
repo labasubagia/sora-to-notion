@@ -249,7 +249,11 @@ async def delete_conversation_of_image_generation_uploaded_to_notion(
 
 
 async def upload_to_notion(
-    dataset: str, image_folder: str, db_id, upload_to_notion=True
+    dataset: str,
+    image_folder: str,
+    db_id,
+    upload_to_notion=True,
+    remove_in_chatgpt=False,
 ):
     print("📊 Saving dataset from image generations...")
     await save_dataset_of_image_generations(dataset=dataset)
@@ -268,3 +272,11 @@ async def upload_to_notion(
             image_folder=image_folder,
         )
         print("✅ All images uploaded to Notion.\n")
+
+    if remove_in_chatgpt:
+        print("🗑️  Deleting conversations of uploaded image generations...")
+        await delete_conversation_of_image_generation_uploaded_to_notion(
+            dataset=dataset,
+            db_id=db_id,
+        )
+        print("✅ Conversations deleted.\n")

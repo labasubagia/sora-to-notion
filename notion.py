@@ -20,6 +20,7 @@ headers = {
 
 # Cache for database data sources
 _db_data_sources_cache = {}
+_db_page_cache = set()
 
 
 async def get_db_data_sources(db_id: str):
@@ -41,6 +42,8 @@ async def is_page_exists_in_db(
     db_id: str,
     query: str,
 ) -> bool:
+    if query in _db_page_cache:
+        return True
     data_sources = await get_db_data_sources(db_id)
     async with aiohttp.ClientSession() as session:
         for data_source in data_sources:
@@ -58,6 +61,7 @@ async def is_page_exists_in_db(
                 for page in data.get("results", []):
                     name = page["properties"]["Name"]["title"][0]["text"]["content"]
                     if name == query:
+                        _db_page_cache.add(query)
                         return True
     return False
 
@@ -122,6 +126,7 @@ async def add_page_to_db(db_id, file_path, prompt, model="Sora", face="_original
             },
         ) as response:
             response.raise_for_status()
+            _db_page_cache.add(file_name)
             return await response.json()
 
 

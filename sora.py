@@ -305,10 +305,9 @@ def delete_generations(dataset, max_workers=10):
             future.result()
 
 
-def delete_generations_already_uploaded_to_notion(
+async def delete_generations_already_uploaded_to_notion(
     dataset,
     db_id,
-    max_workers=10,
 ):
     df = pd.read_csv(os.path.join(dataset))
     processed = 0
@@ -319,12 +318,12 @@ def delete_generations_already_uploaded_to_notion(
         generation_id = row["id"]
         delete_tasks.append(generation_id)
 
-    def delete(generation_id):
+    async def delete(generation_id):
         nonlocal processed
         while True:
             try:
                 file_name = f"{generation_id}.png"
-                if is_page_exists_in_db(db_id, file_name):
+                if await is_page_exists_in_db(db_id, file_name):
                     delete_generation(generation_id)
                     processed += 1
                     print(
@@ -333,7 +332,7 @@ def delete_generations_already_uploaded_to_notion(
                 else:
                     processed += 1
                     print(
-                        f"[{msg_prefix_progress(processed, total)} {generation_id}] skipped, not uploaded to notion yet"
+                        f"[{msg_prefix_progress(processed, total)}] {generation_id} skipped, not uploaded to notion yet"
                     )
                 break
             except Exception as e:
@@ -341,10 +340,7 @@ def delete_generations_already_uploaded_to_notion(
                     f"[{msg_prefix_progress(processed, total)}] {generation_id} error: {e}, retrying..."
                 )
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(delete, gen_id) for gen_id in delete_tasks]
-        for future in as_completed(futures):
-            future.result()
+    await asyncio.gather(*[delete(gen_id) for gen_id in delete_tasks])
 
 
 def upload_to_notion(
@@ -374,9 +370,11 @@ def upload_to_notion(
 
     if remove_in_sora:
         print("🗑️  Deleting generations already uploaded to Notion...")
-        delete_generations_already_uploaded_to_notion(
-            dataset=dataset,
-            db_id=db_id,
+        asyncio.run(
+            delete_generations_already_uploaded_to_notion(
+                dataset=dataset,
+                db_id=db_id,
+            )
         )
         print("✅ Deletion completed.\n")
 
