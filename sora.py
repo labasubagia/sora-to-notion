@@ -150,12 +150,12 @@ def delete_all_empty_tasks(max_workers=10):
                 return
             except Exception as e:
                 print(
-                    f"[{msg_prefix_progress(processed, total)}] task {task_id} failed to delete: {e}, retrying..."
+                    f"[{msg_prefix_progress(processed, total)}] task {task_id} failed to delete: {e}, retrying...\n"
                 )
         else:
             processed += 1
             print(
-                f"[{msg_prefix_progress(processed, total)}] task {task_id} failed to delete after {MAX_RETRIES} attempts."
+                f"[{msg_prefix_progress(processed, total)}] task {task_id} failed to delete after {MAX_RETRIES} attempts.\n"
             )
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
