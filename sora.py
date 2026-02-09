@@ -347,7 +347,7 @@ def delete_generations_already_uploaded_to_notion(
             future.result()
 
 
-def sora_upload_to_notion(
+def upload_to_notion(
     dataset: str, image_folder: str, db_id, upload_to_notion=True, remove_in_sora=False
 ):
     print("📊 Saving dataset from generations...")
@@ -381,7 +381,7 @@ def sora_upload_to_notion(
         print("✅ Deletion completed.\n")
 
 
-def sora_cleanup_trash(dataset: str):
+def cleanup_trash(dataset: str):
     print("📊 Saving dataset from generations in trash folder...")
     save_dataset_from_generations(dataset=dataset, archived=True)
     print("✅ Dataset saved.\n")
@@ -391,7 +391,7 @@ def sora_cleanup_trash(dataset: str):
     print("✅ Cleanup completed.\n")
 
 
-def sora_cleanup_tasks():
+def cleanup_tasks():
     print("🗑️  Deleting all empty tasks...")
     delete_all_empty_tasks()
     print("✅ All empty tasks deleted.\n")

@@ -248,7 +248,7 @@ async def delete_conversation_of_image_generation_uploaded_to_notion(
     await asyncio.gather(*[delete_if_uploaded(row) for _, row in df.iterrows()])
 
 
-async def chatgpt_upload_to_notion(
+async def upload_to_notion(
     dataset: str, image_folder: str, db_id, upload_to_notion=True
 ):
     print("📊 Saving dataset from image generations...")
