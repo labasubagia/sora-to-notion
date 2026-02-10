@@ -75,7 +75,7 @@ async def fetch_list_tasks(
 
 
 async def fetch_all_lists_tasks(
-    task_limit=100,
+    task_limit=20,
     archived=False,  # this is trash in sora
 ):
     batch_count = 1
@@ -207,7 +207,7 @@ async def download_all_images(dataset, download_folder="sora_images"):
     async def download(row):
         nonlocal processed
 
-        generation_id = row["id"]
+        generation_id = row.id
         file_name = f"{generation_id}.png"
         file_path = get_output_path(os.path.join(download_folder, file_name))
 
@@ -222,7 +222,7 @@ async def download_all_images(dataset, download_folder="sora_images"):
             try:
                 # async with aiohttp.ClientSession(headers=headers) as session:
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(row["url"]) as response:
+                    async with session.get(row.url) as response:
                         response.raise_for_status()
                         content = await response.read()
                         with open(file_path, "wb") as f:
@@ -242,7 +242,7 @@ async def download_all_images(dataset, download_folder="sora_images"):
                 f"[{msg_prefix_progress(processed, total)}] {file_path} failed to download after {MAX_RETRIES} attempts."
             )
 
-    await asyncio.gather(*[download(row) for _, row in df.iterrows()])
+    await asyncio.gather(*[download(row) for row in df.itertuples(index=False)])
 
 
 async def delete_generation(id: str):
@@ -278,7 +278,7 @@ async def delete_generations(dataset):
                 f"[{msg_prefix_progress(processed, total)}] {generation_id} failed to delete after {MAX_RETRIES} attempts."
             )
 
-    await asyncio.gather(*[delete(row["id"]) for _, row in df.iterrows()])
+    await asyncio.gather(*[delete(row.id) for row in df.itertuples(index=False)])
 
 
 async def delete_generations_already_uploaded_to_notion(
@@ -311,7 +311,7 @@ async def delete_generations_already_uploaded_to_notion(
                     f"[{msg_prefix_progress(processed, total)}] {generation_id} error: {e}, retrying..."
                 )
 
-    await asyncio.gather(*[delete(row["id"]) for _, row in df.iterrows()])
+    await asyncio.gather(*[delete(row.id) for row in df.itertuples(index=False)])
 
 
 async def trash_generations_already_uploaded_to_notion(
@@ -344,7 +344,7 @@ async def trash_generations_already_uploaded_to_notion(
                     f"[{msg_prefix_progress(processed, total)}] {generation_id} error: {e}, retrying..."
                 )
 
-    await asyncio.gather(*[trash(row["id"]) for _, row in df.iterrows()])
+    await asyncio.gather(*[trash(row.id) for row in df.itertuples(index=False)])
 
 
 async def upload_to_notion(

@@ -70,6 +70,8 @@ def add_prompt_to_all_images(dataset, folder, max_workers=10):
             )
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(add_prompt, row) for (_, row) in df.iterrows()]
+        futures = [
+            executor.submit(add_prompt, row) for row in df.itertuples(index=False)
+        ]
         for future in as_completed(futures):
             future.result()

@@ -184,5 +184,5 @@ async def upload_all_images_to_notion(dataset, db_id, image_folder):
             )
 
     await asyncio.gather(
-        *[upload(row["id"], row["prompt"]) for (_, row) in df.iterrows()]
+        *[upload(row.id, row.prompt) for row in df.itertuples(index=False)]
     )

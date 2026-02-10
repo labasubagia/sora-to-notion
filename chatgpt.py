@@ -199,7 +199,7 @@ async def download_all_images(
 
     async def download_image(session, row):
         nonlocal processed
-        file_name = f"{row['id']}.png"
+        file_name = f"{row.id}.png"
         file_path = get_output_path(os.path.join(download_folder, file_name))
 
         if os.path.exists(file_path):
@@ -211,7 +211,7 @@ async def download_all_images(
 
         for _ in range(MAX_RETRIES):
             try:
-                async with session.get(row["url"], headers=headers) as response:
+                async with session.get(row.url, headers=headers) as response:
                     response.raise_for_status()
                     with open(file_path, "wb") as f:
                         f.write(await response.read())
@@ -232,7 +232,7 @@ async def download_all_images(
 
     async with aiohttp.ClientSession() as session:
         await asyncio.gather(
-            *[download_image(session, row) for _, row in df.iterrows()]
+            *[download_image(session, row) for row in df.itertuples(index=False)]
         )
 
 
@@ -247,7 +247,7 @@ async def delete_conversation_of_image_generation_uploaded_to_notion(dataset, db
         nonlocal processed
         for _ in range(MAX_RETRIES):
             try:
-                file_name = f"{row['id']}.png"
+                file_name = f"{row.id}.png"
 
                 exists = await is_page_exists_in_db(db_id, file_name)
                 if not exists:
@@ -257,23 +257,23 @@ async def delete_conversation_of_image_generation_uploaded_to_notion(dataset, db
                     )
                     return
 
-                await delete_conversation(row["conversation_id"])
+                await delete_conversation(row.conversation_id)
                 processed += 1
                 print(
-                    f"[{msg_prefix_progress(processed, total)}] Conversation ID {row['conversation_id']} deleted."
+                    f"[{msg_prefix_progress(processed, total)}] Conversation ID {row.conversation_id} deleted."
                 )
                 return
             except Exception as e:
                 print(
-                    f"[{msg_prefix_progress(processed, total)}] Conversation ID {row['conversation_id']} delete error: {e}, retrying..."
+                    f"[{msg_prefix_progress(processed, total)}] Conversation ID {row.conversation_id} delete error: {e}, retrying..."
                 )
         else:
             processed += 1
             print(
-                f"[{msg_prefix_progress(processed, total)}] Conversation ID {row['conversation_id']} failed after {MAX_RETRIES} retries"
+                f"[{msg_prefix_progress(processed, total)}] Conversation ID {row.conversation_id} failed after {MAX_RETRIES} retries"
             )
 
-    await asyncio.gather(*[delete(row) for _, row in df.iterrows()])
+    await asyncio.gather(*[delete(row) for row in df.itertuples(index=False)])
 
 
 async def upload_to_notion(
