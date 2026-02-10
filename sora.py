@@ -187,7 +187,8 @@ async def get_generation_download_url(generation_id):
 
 async def download_generation_image(download_folder, generation_id):
     url = await get_generation_download_url(generation_id)
-    async with aiohttp.ClientSession(headers=headers) as session:
+    # async with aiohttp.ClientSession(headers=headers) as session:
+    async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
             file_name = f"{generation_id}.png"
             file_path = get_output_path(os.path.join(download_folder, file_name))
@@ -219,7 +220,8 @@ async def download_all_images(dataset, download_folder="sora_images"):
 
         for _ in range(MAX_RETRIES):
             try:
-                async with aiohttp.ClientSession(headers=headers) as session:
+                # async with aiohttp.ClientSession(headers=headers) as session:
+                async with aiohttp.ClientSession() as session:
                     async with session.get(row["url"]) as response:
                         response.raise_for_status()
                         content = await response.read()
