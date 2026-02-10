@@ -20,8 +20,9 @@ API_KEY = config.get("CHATGPT_AUTHORIZATION_TOKEN")
 USER_AGENT = config.get("CHATGPT_USER_AGENT")
 
 headers = {
-    "authorization": f"Bearer {API_KEY}",
-    "user-agent": USER_AGENT,
+    "Authorization": f"Bearer {API_KEY}",
+    "User-Agent": USER_AGENT,
+    "Content-Type": "application/json",
 }
 
 
@@ -285,7 +286,7 @@ async def upload_to_notion(
     print("📊 Saving dataset from image generations...")
     await save_dataset_of_image_generations(dataset=dataset)
     print("✅ Dataset saved.\n")
-    print("🖼️ Downloading all images...")
+    print("🖼️  Downloading all images...")
     await download_all_images(
         dataset=dataset,
         download_folder=image_folder,

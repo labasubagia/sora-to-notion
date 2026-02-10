@@ -1,6 +1,6 @@
 from pathlib import Path
 
-MAX_RETRIES = 5
+MAX_RETRIES = 10
 
 
 def msg_prefix_progress(processed: int, total: int) -> str:

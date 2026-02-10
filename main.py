@@ -22,16 +22,22 @@ def sora_upload_to_notion(
     upload_to_notion: Annotated[
         bool, typer.Option(help="Whether to upload to Notion")
     ] = True,
+    trash_in_sora: Annotated[
+        bool, typer.Option(help="Whether to trash uploaded items in Sora")
+    ] = False,
     remove_in_sora: Annotated[
         bool, typer.Option(help="Whether to remove uploaded items in Sora")
     ] = False,
 ):
-    sora.upload_to_notion(
-        dataset,
-        image_folder,
-        db_id,
-        upload_to_notion=upload_to_notion,
-        remove_in_sora=remove_in_sora,
+    asyncio.run(
+        sora.upload_to_notion(
+            dataset,
+            image_folder,
+            db_id,
+            upload_to_notion=upload_to_notion,
+            trash_in_sora=trash_in_sora,
+            remove_in_sora=remove_in_sora,
+        )
     )
 
 
@@ -41,12 +47,12 @@ def sora_cleanup_trash(
         str, typer.Option(help="Path to the dataset CSV file")
     ] = "sora_trash_generations.csv",
 ):
-    sora.cleanup_trash(dataset)
+    asyncio.run(sora.cleanup_trash(dataset))
 
 
 @app.command()
 def sora_cleanup_tasks():
-    sora.cleanup_tasks()
+    asyncio.run(sora.cleanup_tasks())
 
 
 @app.command()

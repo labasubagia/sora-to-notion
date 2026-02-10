@@ -1,17 +1,9 @@
-"""
-Sora API interactions for fetching tasks, downloading images, and deleting generations.
-NOTE: Required to use `curl` due to sora don't have offical API Access, and using `requests` causes 403 Forbidden errors.
-"""
-
 import asyncio
 import json
 import os
-import subprocess
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import aiohttp
 import pandas as pd
-import requests
 from dotenv import dotenv_values
 
 from notion import is_page_exists_in_db, upload_all_images_to_notion
@@ -19,128 +11,119 @@ from util import MAX_RETRIES, get_output_path, msg_prefix_progress
 
 config = dotenv_values()
 
-BASE_URL = "https://sora.chatgpt.com"
+BASE_URL = "https://sora.chatgpt.com/backend"
 AUTHORIZATION_TOKEN = config.get("CHATGPT_AUTHORIZATION_TOKEN")
 USER_AGENT = config.get("CHATGPT_USER_AGENT")
 
+headers = {
+    "Authorization": f"Bearer {AUTHORIZATION_TOKEN}",
+    "User-Agent": USER_AGENT,
+    "Content-Type": "application/json",
+}
 
-def archive_task(task_id: str):
+
+async def archive_generation(generation_id: str, is_archived=True):
     """
-    Trash in Sora
+    Trash a generation in Sora,
+
+    is_archived=True means trash, is_archived=False means untrash/restore
     """
-    command = [
-        "curl",
-        "-s",
-        "-L",
-        "-X",
-        "POST",
-        f"{BASE_URL}/backend/video_gen/{task_id}/archive",
-        "-H",
-        f"authorization: Bearer {AUTHORIZATION_TOKEN}",
-        "-H",
-        f"user-agent: {USER_AGENT}",
-    ]
-    result = subprocess.run(command, capture_output=True, text=True)
-    json_data = json.loads(result.stdout)
-    return json_data
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.post(
+            f"{BASE_URL}/generations/{generation_id}", json={"is_archived": is_archived}
+        ) as response:
+            response.raise_for_status()
+            json_data = await response.json()
+            return json_data
 
 
-def delete_task(task_id: str):
-    command = [
-        "curl",
-        "-s",
-        "-L",
-        "-X",
-        "DELETE",
-        f"{BASE_URL}/backend/video_gen/{task_id}",
-        "-H",
-        f"authorization: Bearer {AUTHORIZATION_TOKEN}",
-        "-H",
-        f"user-agent: {USER_AGENT}",
-    ]
-    result = subprocess.run(command, capture_output=True, text=True)
-    json_data = json.loads(result.stdout)
-    return json_data
+async def archive_task(task_id: str):
+    """
+    Trash a task in Sora
+    """
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.post(f"{BASE_URL}/video_gen/{task_id}/archive") as response:
+            response.raise_for_status()
+            json_data = await response.json()
+            return json_data
 
 
-def fetch_lists_tasks(
+async def delete_task(task_id: str):
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.delete(f"{BASE_URL}/video_gen/{task_id}") as response:
+            response.raise_for_status()
+            json_data = await response.json()
+            return json_data
+
+
+async def fetch_list_tasks(
     task_limit=20,
     after_task_id=None,
     archived=False,  # this is trash in sora
 ):
-    url = f"{BASE_URL}/backend/v2/list_tasks?limit={task_limit}"
-    if after_task_id:
-        url += f"&after={after_task_id}"
+    params = {"limit": task_limit}
     if archived:
-        url += "&archived=true"
+        params["archived"] = "true"
+    if after_task_id:
+        params["after"] = after_task_id
 
-    command = [
-        "curl",
-        "-s",
-        "-L",
-        url,
-        "-H",
-        f"authorization: Bearer {AUTHORIZATION_TOKEN}",
-        "-H",
-        f"user-agent: {USER_AGENT}",
-    ]
-    result = subprocess.run(command, capture_output=True, text=True)
-    json_data = json.loads(result.stdout)
-    return json_data
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.get(f"{BASE_URL}/v2/list_tasks", params=params) as response:
+            response.raise_for_status()
+            json_data = await response.json()
+            return json_data
 
 
-def fetch_all_lists_tasks(
+async def fetch_all_lists_tasks(
     task_limit=100,
     archived=False,  # this is trash in sora
 ):
+    batch_count = 1
     all_tasks = []
+    has_more = True
     last_id = None
-    request_count = 1
-    while True:
+    while has_more:
         try:
-            data = fetch_lists_tasks(
+            data = await fetch_list_tasks(
                 task_limit=task_limit,
                 after_task_id=last_id,
                 archived=archived,
             )
             last_id = data.get("last_id", None)
-            all_tasks.extend(data.get("task_responses", []))
+            has_more = data.get("has_more", False)
+            tasks = data.get("task_responses", [])
+            all_tasks.extend(tasks)
             print(
-                f"{request_count} Fetched last_id {last_id}, has_more: {data['has_more']}"
+                f"Batch {batch_count} fetched, last_id {last_id}, has_more: {has_more}"
             )
-            request_count += 1
-            if not data.get("has_more", False):
-                break
+            batch_count += 1
         except Exception as e:
-            print(f"{request_count} Error fetching tasks, retrying..., error: {e}")
+            print(f"Batch {batch_count} fetch error, retrying..., error: {e}")
 
     return all_tasks
 
 
-def delete_all_empty_tasks(max_workers=10):
+async def delete_empty_tasks():
     """
     Delete all tasks that have no generations.
-
-    :param max_workers: max parallel workers for deleting tasks
-    :return: None
     """
     empty_tasks = []
-    tasks = fetch_all_lists_tasks(task_limit=100, archived=False)
+    tasks = await fetch_all_lists_tasks(task_limit=100, archived=False)
     for task in tasks:
         if len(task.get("generations", [])) == 0:
             task_id = task.get("id")
             empty_tasks.append(task_id)
-    print()
+
     processed = 0
     total = len(empty_tasks)
-    print(f"Total failed tasks to delete: {total}\n")
+    print(f"Total empty tasks to delete: {total}\n")
 
-    def delete(task_id):
+    async def delete(task_id):
         nonlocal processed
         for _ in range(MAX_RETRIES):
             try:
-                archive_data = archive_task(task_id)
-                deleted_data = delete_task(task_id)
+                archive_data = await archive_task(task_id)
+                deleted_data = await delete_task(task_id)
                 processed += 1
                 print(
                     f"[{msg_prefix_progress(processed, total)}] task {task_id} deleted\n"
@@ -158,19 +141,16 @@ def delete_all_empty_tasks(max_workers=10):
                 f"[{msg_prefix_progress(processed, total)}] task {task_id} failed to delete after {MAX_RETRIES} attempts.\n"
             )
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(delete, id) for id in empty_tasks]
-        for future in as_completed(futures):
-            future.result()
+    await asyncio.gather(*[delete(task_id) for task_id in empty_tasks])
 
 
-def save_dataset_from_generations(
+async def save_dataset_from_generations(
     dataset: str,  # filename with extension (e.g. generations.csv)
     task_limit=100,
     archived=False,  # this is trash in sora
 ):
     generation_results = []
-    tasks = fetch_all_lists_tasks(
+    tasks = await fetch_all_lists_tasks(
         task_limit=task_limit,
         archived=archived,
     )
@@ -195,31 +175,26 @@ def save_dataset_from_generations(
     df.to_csv(get_output_path(dataset), index=False)
 
 
-def get_generation_download_url(generation_id):
-    command = [
-        "curl",
-        "-s",
-        "-L",
-        f"{BASE_URL}/backend/generations/{generation_id}/download",
-        "-H",
-        f"authorization: Bearer {AUTHORIZATION_TOKEN}",
-        "-H",
-        f"user-agent: {USER_AGENT}",
-    ]
-    result = subprocess.run(command, capture_output=True, text=True)
-    json_data = json.loads(result.stdout)
-    return json_data.get("url", None)
+async def get_generation_download_url(generation_id):
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.get(
+            f"{BASE_URL}/generations/{generation_id}/download"
+        ) as response:
+            response.raise_for_status()
+            json_data = await response.json()
+            return json_data.get("url", None)
 
 
-def download_generation_image(download_folder, generation_id):
-    url = get_generation_download_url(generation_id)
-    download = requests.get(url)
-    download.raise_for_status()
-    if download.status_code == 200:
-        file_name = f"{generation_id}.png"
-        save_path = get_output_path(os.path.join(download_folder, file_name))
-        with open(save_path, "wb") as f:
-            f.write(download.content)
+async def download_generation_image(download_folder, generation_id):
+    url = await get_generation_download_url(generation_id)
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.get(url) as response:
+            file_name = f"{generation_id}.png"
+            file_path = get_output_path(os.path.join(download_folder, file_name))
+            response.raise_for_status()
+            content = await response.read()
+            with open(file_path, "wb") as f:
+                f.write(content)
 
 
 async def download_all_images(dataset, download_folder="sora_images"):
@@ -244,7 +219,7 @@ async def download_all_images(dataset, download_folder="sora_images"):
 
         for _ in range(MAX_RETRIES):
             try:
-                async with aiohttp.ClientSession() as session:
+                async with aiohttp.ClientSession(headers=headers) as session:
                     async with session.get(row["url"]) as response:
                         response.raise_for_status()
                         content = await response.read()
@@ -268,39 +243,24 @@ async def download_all_images(dataset, download_folder="sora_images"):
     await asyncio.gather(*[download(row) for _, row in df.iterrows()])
 
 
-def delete_generation(id: str):
-    command = [
-        "curl",
-        "-s",
-        "-L",
-        "-X",
-        "DELETE",
-        f"{BASE_URL}/backend/generations/{id}",
-        "-H",
-        f"authorization: Bearer {AUTHORIZATION_TOKEN}",
-        "-H",
-        f"user-agent: {USER_AGENT}",
-    ]
-    result = subprocess.run(command, capture_output=True, text=True)
-    json_data = json.loads(result.stdout)
-    return json_data
+async def delete_generation(id: str):
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.delete(f"{BASE_URL}/generations/{id}") as response:
+            response.raise_for_status()
+            json_data = await response.json()
+            return json_data
 
 
-def delete_generations(dataset, max_workers=10):
+async def delete_generations(dataset):
     df = pd.read_csv(get_output_path(dataset))
     processed = 0
     total = len(df)
 
-    delete_tasks = []
-    for _, row in df.iterrows():
-        generation_id = row["id"]
-        delete_tasks.append(generation_id)
-
-    def delete(generation_id):
+    async def delete(generation_id):
         nonlocal processed
         for _ in range(MAX_RETRIES):
             try:
-                delete_generation(generation_id)
+                await delete_generation(generation_id)
                 processed += 1
                 print(
                     f"[{msg_prefix_progress(processed, total)}] {generation_id} deleted"
@@ -316,10 +276,7 @@ def delete_generations(dataset, max_workers=10):
                 f"[{msg_prefix_progress(processed, total)}] {generation_id} failed to delete after {MAX_RETRIES} attempts."
             )
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(delete, gen_id) for gen_id in delete_tasks]
-        for future in as_completed(futures):
-            future.result()
+    await asyncio.gather(*[delete(row["id"]) for _, row in df.iterrows()])
 
 
 async def delete_generations_already_uploaded_to_notion(
@@ -330,18 +287,13 @@ async def delete_generations_already_uploaded_to_notion(
     processed = 0
     total = len(df)
 
-    delete_tasks = []
-    for _, row in df.iterrows():
-        generation_id = row["id"]
-        delete_tasks.append(generation_id)
-
     async def delete(generation_id):
         nonlocal processed
         for _ in range(MAX_RETRIES):
             try:
                 file_name = f"{generation_id}.png"
                 if await is_page_exists_in_db(db_id, file_name):
-                    delete_generation(generation_id)
+                    await delete_generation(generation_id)
                     processed += 1
                     print(
                         f"[{msg_prefix_progress(processed, total)}] {generation_id} deleted"
@@ -357,58 +309,101 @@ async def delete_generations_already_uploaded_to_notion(
                     f"[{msg_prefix_progress(processed, total)}] {generation_id} error: {e}, retrying..."
                 )
 
-    await asyncio.gather(*[delete(gen_id) for gen_id in delete_tasks])
+    await asyncio.gather(*[delete(row["id"]) for _, row in df.iterrows()])
 
 
-def upload_to_notion(
-    dataset: str, image_folder: str, db_id, upload_to_notion=True, remove_in_sora=False
+async def trash_generations_already_uploaded_to_notion(
+    dataset,
+    db_id,
 ):
+    df = pd.read_csv(get_output_path(dataset))
+    processed = 0
+    total = len(df)
+
+    async def trash(generation_id):
+        nonlocal processed
+        for _ in range(MAX_RETRIES):
+            try:
+                file_name = f"{generation_id}.png"
+                if await is_page_exists_in_db(db_id, file_name):
+                    await archive_generation(generation_id)
+                    processed += 1
+                    print(
+                        f"[{msg_prefix_progress(processed, total)}] {generation_id} trashed"
+                    )
+                else:
+                    processed += 1
+                    print(
+                        f"[{msg_prefix_progress(processed, total)}] {generation_id} skipped, not uploaded to notion yet"
+                    )
+                return
+            except Exception as e:
+                print(
+                    f"[{msg_prefix_progress(processed, total)}] {generation_id} error: {e}, retrying..."
+                )
+
+    await asyncio.gather(*[trash(row["id"]) for _, row in df.iterrows()])
+
+
+async def upload_to_notion(
+    dataset: str,
+    image_folder: str,
+    db_id,
+    upload_to_notion=True,
+    trash_in_sora=False,
+    remove_in_sora=False,
+):
+    if trash_in_sora and remove_in_sora:
+        raise ValueError("trash_in_sora and remove_in_sora cannot be both True.")
+
     print("📊 Saving dataset from generations...")
-    save_dataset_from_generations(dataset=dataset)
+    await save_dataset_from_generations(dataset=dataset)
     print("✅ Dataset saved.\n")
 
     print("🖼️  Downloading all images...")
-    asyncio.run(
-        download_all_images(
-            dataset=dataset,
-            download_folder=image_folder,
-        )
+    await download_all_images(
+        dataset=dataset,
+        download_folder=image_folder,
     )
     print("✅ All images downloaded.\n")
 
     if upload_to_notion:
         print("📤 Uploading all images to Notion...")
-        asyncio.run(
-            upload_all_images_to_notion(
-                dataset=dataset,
-                db_id=db_id,
-                image_folder=image_folder,
-            )
+        await upload_all_images_to_notion(
+            dataset=dataset,
+            db_id=db_id,
+            image_folder=image_folder,
         )
         print("✅ All images uploaded to Notion.\n")
 
+    if trash_in_sora:
+        print("🗑️  Trashing generations already uploaded to Notion...")
+        await trash_generations_already_uploaded_to_notion(
+            dataset=dataset,
+            db_id=db_id,
+        )
+        print("✅ Trashing completed.\n")
+
     if remove_in_sora:
         print("🗑️  Deleting generations already uploaded to Notion...")
-        asyncio.run(
-            delete_generations_already_uploaded_to_notion(
-                dataset=dataset,
-                db_id=db_id,
-            )
+        await delete_generations_already_uploaded_to_notion(
+            dataset=dataset,
+            db_id=db_id,
         )
         print("✅ Deletion completed.\n")
 
 
-def cleanup_trash(dataset: str):
+async def cleanup_trash(dataset: str):
     print("📊 Saving dataset from generations in trash folder...")
-    save_dataset_from_generations(dataset=dataset, archived=True)
+    await save_dataset_from_generations(dataset=dataset, archived=True)
     print("✅ Dataset saved.\n")
 
     print("🗑️  Deleting all generations in trash...")
-    delete_generations(dataset=dataset)
+    await delete_generations(dataset=dataset)
     print("✅ Cleanup completed.\n")
 
 
-def cleanup_tasks():
+async def cleanup_tasks():
     print("🗑️  Deleting all empty tasks...")
-    delete_all_empty_tasks()
+    await delete_empty_tasks()
     print("✅ All empty tasks deleted.\n")

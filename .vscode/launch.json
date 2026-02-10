@@ -83,6 +83,22 @@
                 "debug_sora_generations.csv",
                 "--image-folder",
                 "debug_sora_images",
+                "--trash-in-sora"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "name": "Debug: sora_upload_to_notion --trash-in-sora",
+            "program": "${workspaceFolder}/main.py",
+            "request": "launch",
+            "type": "debugpy"
+        },
+        {
+            "args": [
+                "sora-upload-to-notion",
+                "--dataset",
+                "debug_sora_generations.csv",
+                "--image-folder",
+                "debug_sora_images",
                 "--remove-in-sora"
             ],
             "console": "integratedTerminal",
