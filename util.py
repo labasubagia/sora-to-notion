@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 
-MAX_RETRIES = 10
+MAX_RETRIES = 20
 
 OUTPUT_PATH = "./output"
 

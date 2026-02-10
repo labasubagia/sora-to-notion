@@ -56,6 +56,22 @@ async def delete_task(task_id: str):
             return json_data
 
 
+async def fetch_recent_tasks(limit=100, before_task_id: str = None, archived=False):
+    params = {"limit": limit}
+    if before_task_id:
+        params["before"] = before_task_id
+    if archived:
+        params["archived"] = "true"
+
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.get(
+            f"{BASE_URL}/v2/recent_tasks", params=params
+        ) as response:
+            response.raise_for_status()
+            json_data = await response.json()
+            return json_data
+
+
 async def fetch_list_tasks(
     task_limit=20,
     after_task_id=None,
@@ -144,19 +160,11 @@ async def delete_empty_tasks():
     await asyncio.gather(*[delete(task_id) for task_id in empty_tasks])
 
 
-async def save_dataset_from_generations(
-    dataset: str,  # filename with extension (e.g. generations.csv)
-    task_limit=100,
-    archived=False,  # this is trash in sora
-):
-    generation_results = []
-    tasks = await fetch_all_lists_tasks(
-        task_limit=task_limit,
-        archived=archived,
-    )
+def save_dataset_generations(dataset: str, tasks):
+    generations = []
     for task in tasks:
         for generation in task.get("generations", []):
-            generation_results.append(
+            generations.append(
                 {
                     "created_at": task.get("created_at"),
                     "id": generation.get("id"),
@@ -165,14 +173,34 @@ async def save_dataset_from_generations(
                     "prompt": generation.get("prompt"),
                 }
             )
-
-    if len(generation_results) == 0:
+    if len(generations) == 0:
         df = pd.DataFrame(columns=["created_at", "id", "task_id", "url", "prompt"])
     else:
-        df = pd.DataFrame(generation_results)
+        df = pd.DataFrame(generations)
         df = df.sort_values(by="created_at", ascending=True).reset_index(drop=True)
-
     df.to_csv(get_output_path(dataset), index=False)
+
+
+async def save_dataset_generations_from_recent_tasks(
+    dataset: str,  # filename with extension (e.g. generations.csv)
+    limit=100,
+    archived=False,  # this is trash in sora
+):
+    data = await fetch_recent_tasks(limit=limit, archived=archived)
+    tasks = data.get("task_responses", [])
+    save_dataset_generations(dataset=dataset, tasks=tasks)
+
+
+async def save_dataset_generations_from_list_tasks(
+    dataset: str,  # filename with extension (e.g. generations.csv)
+    task_limit=100,
+    archived=False,  # this is trash in sora
+):
+    tasks = await fetch_all_lists_tasks(
+        task_limit=task_limit,
+        archived=archived,
+    )
+    save_dataset_generations(dataset=dataset, tasks=tasks)
 
 
 async def get_generation_download_url(generation_id):
@@ -359,7 +387,7 @@ async def upload_to_notion(
         raise ValueError("trash_in_sora and remove_in_sora cannot be both True.")
 
     print("📊 Saving dataset from generations...")
-    await save_dataset_from_generations(dataset=dataset)
+    await save_dataset_generations_from_recent_tasks(dataset=dataset)
     print("✅ Dataset saved.\n")
 
     print("🖼️  Downloading all images...")
@@ -397,7 +425,7 @@ async def upload_to_notion(
 
 async def cleanup_trash(dataset: str):
     print("📊 Saving dataset from generations in trash folder...")
-    await save_dataset_from_generations(dataset=dataset, archived=True)
+    await save_dataset_generations_from_list_tasks(dataset=dataset, archived=True)
     print("✅ Dataset saved.\n")
 
     print("🗑️  Deleting all generations in trash...")
