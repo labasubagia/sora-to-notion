@@ -5,6 +5,7 @@ import typer
 
 import chatgpt
 import sora
+import util
 from notion import DB_ID as NOTION_DB_ID
 
 app = typer.Typer()
@@ -80,6 +81,13 @@ def chatgpt_upload_to_notion(
             remove_in_chatgpt=remove_in_chatgpt,
         )
     )
+
+
+@app.command()
+def clean_output_path():
+    print("Cleaning output path...")
+    util.clean_output_path()
+    print("Output path cleaned.")
 
 
 if __name__ == "__main__":

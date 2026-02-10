@@ -13,6 +13,7 @@
             ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
+            "justMyCode": true,
             "name": "Debug: chatgpt_upload_to_notion",
             "program": "${workspaceFolder}/main.py",
             "request": "launch",
@@ -29,6 +30,7 @@
             ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
+            "justMyCode": true,
             "name": "Debug: chatgpt_upload_to_notion --remove-in-chatgpt",
             "program": "${workspaceFolder}/main.py",
             "request": "launch",
@@ -44,6 +46,7 @@
             ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
+            "justMyCode": true,
             "name": "Debug: sora_cleanup_trash",
             "program": "${workspaceFolder}/main.py",
             "request": "launch",
@@ -55,6 +58,7 @@
             ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
+            "justMyCode": true,
             "name": "Debug: sora_cleanup_tasks",
             "program": "${workspaceFolder}/main.py",
             "request": "launch",
@@ -71,6 +75,7 @@
             ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
+            "justMyCode": true,
             "name": "Debug: sora_upload_to_notion",
             "program": "${workspaceFolder}/main.py",
             "request": "launch",
@@ -87,6 +92,7 @@
             ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
+            "justMyCode": true,
             "name": "Debug: sora_upload_to_notion --trash-in-sora",
             "program": "${workspaceFolder}/main.py",
             "request": "launch",
@@ -103,8 +109,22 @@
             ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
+            "justMyCode": true,
             "name": "Debug: sora_upload_to_notion --remove-in-sora",
             "program": "${workspaceFolder}/main.py",
+            "request": "launch",
+            "type": "debugpy"
+        },
+        //
+        // Utility
+        {
+            "args": [
+                "clean-output-path"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "module": "main",
+            "name": "Debug: clean_output_path",
             "request": "launch",
             "type": "debugpy"
         }
