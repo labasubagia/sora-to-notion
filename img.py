@@ -1,7 +1,6 @@
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import pandas as pd
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 from tqdm import tqdm
@@ -23,28 +22,27 @@ def edit_png_info(file_path, payload: dict[str, str], overwrite=True):
         img.save(file_path, pnginfo=metadata)
 
 
-def add_prompt_to_all_images(dataset, folder, max_workers=10):
+def add_prompt_to_images(generations, folder, max_workers=10):
     """
     This function adds prompt text metadata to all PNG images listed in the given dataset CSV file.
 
     How to read file result:
 
-    `$ exiftool -Comment <file_path>`
+    `$ exiftool -Prompt <file_path>`
 
     Example:
 
-    `$ exiftool -Comment images/gen_01k2pct920ebyte8a69jyds5ds.png`
+    `$ exiftool -Prompt images/gen_01k2pct920ebyte8a69jyds5ds.png`
     """
-    df = pd.read_csv(get_output_path(dataset))
 
-    total = len(df)
+    total = len(generations)
     pbar = tqdm(total=total, desc="Adding prompts to images")
 
     def add_prompt(row):
         file_name = f"{row['id']}.png"
         file_path = get_output_path(os.path.join(folder, file_name))
         if not os.path.exists(file_path):
-            pbar.write(f"⚠️  {file_name} not found, skipped")
+            pbar.write(f"⚠️  {file_path} not found, skipped")
             pbar.update(1)
             return
 
@@ -52,21 +50,19 @@ def add_prompt_to_all_images(dataset, folder, max_workers=10):
             try:
                 edit_png_info(
                     file_path,
-                    payload={"Comment": row["prompt"]},
+                    payload={"Prompt": row["prompt"]},
                 )
-                pbar.write(f"✅ {file_name} edited")
+                pbar.write(f"✅ {file_path}")
                 pbar.update(1)
                 break
             except Exception as e:
-                pbar.write(f"⚠️  {file_name} edit error: {e}, retrying...")
+                pbar.write(f"⚠️  {file_path} edit error: {e}, retrying...")
         else:
-            pbar.write(f"❌ {file_name} edit failed after {MAX_RETRIES} retries")
+            pbar.write(f"❌ {file_path} edit failed after {MAX_RETRIES} retries")
             pbar.update(1)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [
-            executor.submit(add_prompt, row) for row in df.itertuples(index=False)
-        ]
+        futures = [executor.submit(add_prompt, row) for row in generations]
         for future in as_completed(futures):
             future.result()
 

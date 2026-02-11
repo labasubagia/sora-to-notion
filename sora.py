@@ -2,12 +2,12 @@ import asyncio
 import os
 
 import aiohttp
-import pandas as pd
 from dotenv import dotenv_values
 from tqdm.asyncio import tqdm
 
+from img import add_prompt_to_images
 from notion import is_page_exists_in_db, upload_all_images_to_notion
-from util import MAX_RETRIES, get_output_path, http_retryable
+from util import MAX_RETRIES, get_output_path, http_retryable, save_to_dataset
 
 config = dotenv_values()
 
@@ -124,9 +124,6 @@ async def fetch_all_lists_tasks(
 
 
 async def delete_empty_tasks():
-    """
-    Delete all tasks that have no generations.
-    """
     empty_tasks = []
     tasks = await fetch_all_lists_tasks(limit=100, archived=False)
     for task in tasks:
@@ -140,15 +137,23 @@ async def delete_empty_tasks():
     async def delete(task_id):
         for _ in range(MAX_RETRIES):
             try:
-                _ = await archive_task(task_id)
+                try:
+                    _ = await archive_task(task_id)
+                except Exception as archive_err:
+                    pbar.write(
+                        f"⚠️  {task_id} archive failed: {archive_err}, continuing to delete..."
+                    )
+
                 _ = await delete_task(task_id)
-                pbar.write(
-                    f"✅ task {task_id}\n"
-                    # f"archive: {json.dumps(archive_data)}\n"
-                    # f"delete: {json.dumps(deleted_data)}"
-                )
+                pbar.write(f"✅ {task_id}")
                 pbar.update(1)
                 return
+            except aiohttp.ClientError as e:
+                if not http_retryable(e.status):
+                    pbar.write(f"❌ task {task_id} HTTP error: {e}, not retryable")
+                    pbar.update(1)
+                    return
+                pbar.write(f"⚠️  task {task_id} HTTP error: {e}, retrying...")
             except Exception as e:
                 pbar.write(f"⚠️  task {task_id} failed to delete: {e}, retrying...")
         else:
@@ -177,17 +182,6 @@ def get_generations_from_tasks(tasks):
             )
     generations = sorted(generations, key=lambda x: x["created_at"])
     return generations
-
-
-def save_dataset_generations(dataset: str, generations):
-    if dataset is None:
-        return
-    if len(generations) == 0:
-        df = pd.DataFrame(columns=["created_at", "id", "task_id", "url", "prompt"])
-    else:
-        df = pd.DataFrame(generations)
-        df = df.sort_values(by="created_at", ascending=True).reset_index(drop=True)
-    df.to_csv(get_output_path(dataset), index=False)
 
 
 async def get_generation_download_url(generation_id):
@@ -372,12 +366,14 @@ async def trash_generations_already_uploaded_to_notion(
 
 
 async def upload_to_notion(
-    image_folder: str = None,
-    db_id=None,
+    image_folder: str,
+    db_id: str,
     upload_to_notion=True,
     trash_in_sora=False,
     remove_in_sora=False,
+    add_prompt_to_image=True,
     limit=100,
+    dataset: str = None,  # save to dataset if provided
 ):
     if trash_in_sora and remove_in_sora:
         raise ValueError("trash_in_sora and remove_in_sora cannot be both True.")
@@ -386,34 +382,40 @@ async def upload_to_notion(
     tasks = data.get("task_responses", [])
     generations = get_generations_from_tasks(tasks)
 
-    await download_all_images(
-        generations=generations,
-        download_folder=image_folder,
-    )
+    await download_all_images(generations=generations, download_folder=image_folder)
+
+    if dataset:
+        save_to_dataset(dataset=dataset, data=generations)
+
+    if add_prompt_to_image:
+        add_prompt_to_images(generations=generations, folder=image_folder)
 
     if upload_to_notion:
         await upload_all_images_to_notion(
-            generations=generations,
-            db_id=db_id,
-            image_folder=image_folder,
+            generations=generations, db_id=db_id, image_folder=image_folder
         )
 
     if trash_in_sora:
         await trash_generations_already_uploaded_to_notion(
-            generations=generations,
-            db_id=db_id,
+            generations=generations, db_id=db_id
         )
 
     if remove_in_sora:
         await delete_generations_already_uploaded_to_notion(
-            generations=generations,
-            db_id=db_id,
+            generations=generations, db_id=db_id
         )
 
 
-async def cleanup_trash(task_limit=100):
+async def cleanup_trash(
+    task_limit=100,
+    dataset: str = None,  # save to dataset if provided
+):
     tasks = await fetch_all_lists_tasks(limit=task_limit, archived=True)
     generations = get_generations_from_tasks(tasks)
+
+    if dataset:
+        save_to_dataset(dataset=dataset, data=generations)
+
     await delete_generations(generations=generations)
 
 
