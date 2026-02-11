@@ -2,11 +2,10 @@ import asyncio
 import os
 
 import aiohttp
-import pandas as pd
 from dotenv import dotenv_values
 from tqdm.asyncio import tqdm
 
-from util import MAX_RETRIES, get_output_path
+from util import MAX_RETRIES, get_output_path, http_retryable
 
 config = dotenv_values()
 
@@ -143,9 +142,8 @@ async def add_page_to_db(db_id, file_path, prompt, model="Sora", face="_original
             return await response.json()
 
 
-async def upload_all_images_to_notion(dataset, db_id, image_folder):
-    df = pd.read_csv(get_output_path(dataset))
-    total = len(df)
+async def upload_all_images_to_notion(generations, db_id, image_folder):
+    total = len(generations)
     pbar = tqdm(total=total, desc="Uploading to Notion")
 
     async def upload(generation_id, prompt):
@@ -166,14 +164,18 @@ async def upload_all_images_to_notion(dataset, db_id, image_folder):
                     pbar.write(f"✅ {file_name} uploaded")
                     pbar.update(1)
                 return
+            except aiohttp.ClientError as e:
+                if e.status and not http_retryable(e.status):
+                    pbar.write(f"❌ {file_name} HTTP error: {e}, not retryable")
+                    pbar.update(1)
+                    return
+                pbar.write(f"⚠️  {file_name} HTTP error: {e}, retrying...")
             except Exception as e:
                 pbar.write(f"⚠️  {file_name} failed: {e}")
         else:
             pbar.write(f"❌ {file_name} failed after {MAX_RETRIES} retries")
             pbar.update(1)
 
-    await asyncio.gather(
-        *[upload(row.id, row.prompt) for row in df.itertuples(index=False)]
-    )
+    await asyncio.gather(*[upload(row["id"], row["prompt"]) for row in generations])
     pbar.close()
     print()  # Add spacing after progress bar

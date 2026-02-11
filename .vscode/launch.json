@@ -5,8 +5,6 @@
         {
             "args": [
                 "chatgpt-upload-to-notion",
-                "--dataset",
-                "debug_chatgpt_generations.csv",
                 "--image-folder",
                 "debug_chatgpt_images",
                 "--no-remove-in-chatgpt"
@@ -22,8 +20,6 @@
         {
             "args": [
                 "chatgpt-upload-to-notion",
-                "--dataset",
-                "debug_chatgpt_generations.csv",
                 "--image-folder",
                 "debug_chatgpt_images",
                 "--remove-in-chatgpt"
@@ -40,9 +36,7 @@
         // Sora debug configurations
         {
             "args": [
-                "sora-cleanup-trash",
-                "--dataset",
-                "debug_sora_trash_generations.csv"
+                "sora-cleanup-trash"
             ],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
@@ -67,8 +61,6 @@
         {
             "args": [
                 "sora-upload-to-notion",
-                "--dataset",
-                "debug_sora_generations.csv",
                 "--image-folder",
                 "debug_sora_images",
                 "--no-remove-in-sora"
@@ -84,8 +76,6 @@
         {
             "args": [
                 "sora-upload-to-notion",
-                "--dataset",
-                "debug_sora_generations.csv",
                 "--image-folder",
                 "debug_sora_images",
                 "--trash-in-sora"
@@ -101,8 +91,6 @@
         {
             "args": [
                 "sora-upload-to-notion",
-                "--dataset",
-                "debug_sora_generations.csv",
                 "--image-folder",
                 "debug_sora_images",
                 "--remove-in-sora"

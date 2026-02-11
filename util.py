@@ -1,16 +1,24 @@
 import shutil
 from pathlib import Path
 
-MAX_RETRIES = 10
+import pandas as pd
+
+MAX_RETRIES = 5
 
 OUTPUT_PATH = "./output"
 
 
-def msg_prefix_progress(processed: int, total: int) -> str:
-    digit = str(total)
-    percent: float = (processed / total) * 100
-    processed_str: str = str(processed).rjust(len(digit), " ")
-    return f"{processed_str}/{total}|{percent:6.2f}%"
+def save_to_dataset(dataset: str, data: list[dict]):
+    if dataset is None:
+        return
+    if len(data) == 0:
+        print("No generations to save to dataset.")
+        return
+    else:
+        df = pd.DataFrame(data)
+    file_path = get_output_path(dataset)
+    df.to_csv(file_path, index=False)
+    print(f"✅ Saved dataset to {file_path}\n")
 
 
 def get_output_path(input_path_str: str, is_dir=False) -> Path:
@@ -44,3 +52,13 @@ def clean_output_path():
             shutil.rmtree(item)
         else:
             item.unlink()
+
+
+def http_retryable(status_code: int) -> bool:
+    retryable_statuses = (
+        500,
+        502,
+        503,
+        504,
+    )
+    return status_code in retryable_statuses

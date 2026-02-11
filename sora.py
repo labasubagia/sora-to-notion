@@ -2,12 +2,12 @@ import asyncio
 import os
 
 import aiohttp
-import pandas as pd
 from dotenv import dotenv_values
 from tqdm.asyncio import tqdm
 
+from img import add_prompt_to_images
 from notion import is_page_exists_in_db, upload_all_images_to_notion
-from util import MAX_RETRIES, get_output_path
+from util import MAX_RETRIES, get_output_path, http_retryable, save_to_dataset
 
 config = dotenv_values()
 
@@ -67,16 +67,16 @@ async def fetch_recent_tasks(limit=100, before_task_id: str = None, archived=Fal
             f"{BASE_URL}/v2/recent_tasks", params=params
         ) as response:
             response.raise_for_status()
-            json_data = await response.json()
-            return json_data
+            data_json = await response.json()
+            return data_json
 
 
 async def fetch_list_tasks(
-    task_limit=20,
+    limit=20,
     after_task_id=None,
     archived=False,  # this is trash in sora
 ):
-    params = {"limit": task_limit}
+    params = {"limit": limit}
     if archived:
         params["archived"] = "true"
     if after_task_id:
@@ -90,7 +90,7 @@ async def fetch_list_tasks(
 
 
 async def fetch_all_lists_tasks(
-    task_limit=20,
+    limit=20,
     archived=False,  # this is trash in sora
 ):
     batch_count = 1
@@ -100,7 +100,7 @@ async def fetch_all_lists_tasks(
     while has_more:
         try:
             data = await fetch_list_tasks(
-                task_limit=task_limit,
+                limit=limit,
                 after_task_id=last_id,
                 archived=archived,
             )
@@ -112,6 +112,11 @@ async def fetch_all_lists_tasks(
                 f"Batch {batch_count} fetched, last_id {last_id}, has_more: {has_more}"
             )
             batch_count += 1
+        except aiohttp.ClientError as e:
+            if not http_retryable(e.status):
+                print(f"Batch {batch_count} fetch error, not retryable HTTP error: {e}")
+                break
+            print(f"Batch {batch_count} fetch HTTP error, retrying..., error: {e}")
         except Exception as e:
             print(f"Batch {batch_count} fetch error, retrying..., error: {e}")
 
@@ -119,11 +124,8 @@ async def fetch_all_lists_tasks(
 
 
 async def delete_empty_tasks():
-    """
-    Delete all tasks that have no generations.
-    """
     empty_tasks = []
-    tasks = await fetch_all_lists_tasks(task_limit=100, archived=False)
+    tasks = await fetch_all_lists_tasks(limit=100, archived=False)
     for task in tasks:
         if len(task.get("generations", [])) == 0:
             task_id = task.get("id")
@@ -135,15 +137,23 @@ async def delete_empty_tasks():
     async def delete(task_id):
         for _ in range(MAX_RETRIES):
             try:
-                _ = await archive_task(task_id)
+                try:
+                    _ = await archive_task(task_id)
+                except Exception as archive_err:
+                    pbar.write(
+                        f"⚠️  {task_id} archive failed: {archive_err}, continuing to delete..."
+                    )
+
                 _ = await delete_task(task_id)
-                pbar.write(
-                    f"✅ task {task_id}\n"
-                    # f"archive: {json.dumps(archive_data)}\n"
-                    # f"delete: {json.dumps(deleted_data)}"
-                )
+                pbar.write(f"✅ {task_id}")
                 pbar.update(1)
                 return
+            except aiohttp.ClientError as e:
+                if not http_retryable(e.status):
+                    pbar.write(f"❌ task {task_id} HTTP error: {e}, not retryable")
+                    pbar.update(1)
+                    return
+                pbar.write(f"⚠️  task {task_id} HTTP error: {e}, retrying...")
             except Exception as e:
                 pbar.write(f"⚠️  task {task_id} failed to delete: {e}, retrying...")
         else:
@@ -157,7 +167,7 @@ async def delete_empty_tasks():
     print()
 
 
-def save_dataset_generations(dataset: str, tasks):
+def get_generations_from_tasks(tasks):
     generations = []
     for task in tasks:
         for generation in task.get("generations", []):
@@ -170,34 +180,8 @@ def save_dataset_generations(dataset: str, tasks):
                     "prompt": generation.get("prompt"),
                 }
             )
-    if len(generations) == 0:
-        df = pd.DataFrame(columns=["created_at", "id", "task_id", "url", "prompt"])
-    else:
-        df = pd.DataFrame(generations)
-        df = df.sort_values(by="created_at", ascending=True).reset_index(drop=True)
-    df.to_csv(get_output_path(dataset), index=False)
-
-
-async def save_dataset_generations_from_recent_tasks(
-    dataset: str,  # filename with extension (e.g. generations.csv)
-    limit=100,
-    archived=False,  # this is trash in sora
-):
-    data = await fetch_recent_tasks(limit=limit, archived=archived)
-    tasks = data.get("task_responses", [])
-    save_dataset_generations(dataset=dataset, tasks=tasks)
-
-
-async def save_dataset_generations_from_list_tasks(
-    dataset: str,  # filename with extension (e.g. generations.csv)
-    task_limit=100,
-    archived=False,  # this is trash in sora
-):
-    tasks = await fetch_all_lists_tasks(
-        task_limit=task_limit,
-        archived=archived,
-    )
-    save_dataset_generations(dataset=dataset, tasks=tasks)
+    generations = sorted(generations, key=lambda x: x["created_at"])
+    return generations
 
 
 async def get_generation_download_url(generation_id):
@@ -223,15 +207,13 @@ async def download_generation_image(download_folder, generation_id):
                 f.write(content)
 
 
-async def download_all_images(dataset, download_folder="sora_images"):
-
-    df = pd.read_csv(get_output_path(dataset))
-    total = len(df)
-
+async def download_all_images(generations, download_folder="sora_images"):
+    total = len(generations)
     pbar = tqdm(total=total, desc="Downloading images")
 
-    async def download(row):
-        generation_id = row.id
+    async def download(generation):
+        generation_id = generation["id"]
+        url = generation["url"]
         file_name = f"{generation_id}.png"
         file_path = get_output_path(os.path.join(download_folder, file_name))
 
@@ -243,7 +225,7 @@ async def download_all_images(dataset, download_folder="sora_images"):
         for _ in range(MAX_RETRIES):
             try:
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(row.url) as response:
+                    async with session.get(url) as response:
                         response.raise_for_status()
                         content = await response.read()
                         with open(file_path, "wb") as f:
@@ -251,13 +233,19 @@ async def download_all_images(dataset, download_folder="sora_images"):
                         pbar.write(f"✅ {file_name}")
                         pbar.update(1)
                         return
+            except aiohttp.ClientError as e:
+                if not http_retryable(e.status):
+                    pbar.write(f"❌ {file_name} HTTP error: {e}, not retryable")
+                    pbar.update(1)
+                    return
+                pbar.write(f"⚠️  {file_name} HTTP error: {e}, retrying...")
             except Exception as e:
                 pbar.write(f"⚠️  {file_name} error: {e}, retrying...")
         else:
             pbar.write(f"❌ {file_name} failed after {MAX_RETRIES} attempts")
             pbar.update(1)
 
-    await asyncio.gather(*[download(row) for row in df.itertuples(index=False)])
+    await asyncio.gather(*[download(gen) for gen in generations])
     pbar.close()
     print()
 
@@ -270,19 +258,24 @@ async def delete_generation(id: str):
             return json_data
 
 
-async def delete_generations(dataset):
-    df = pd.read_csv(get_output_path(dataset))
-    total = len(df)
-
+async def delete_generations(generations):
+    total = len(generations)
     pbar = tqdm(total=total, desc="Deleting generations")
 
-    async def delete(generation_id):
+    async def delete(generation):
+        generation_id = generation.get("id")
         for _ in range(MAX_RETRIES):
             try:
                 await delete_generation(generation_id)
                 pbar.write(f"✅ {generation_id}")
                 pbar.update(1)
                 return
+            except aiohttp.ClientError as e:
+                if not http_retryable(e.status):
+                    pbar.write(f"❌ {generation_id} HTTP error: {e}, not retryable")
+                    pbar.update(1)
+                    return
+                pbar.write(f"⚠️  {generation_id} HTTP error: {e}, retrying...")
             except Exception as e:
                 pbar.write(f"⚠️  {generation_id} error: {e}, retrying...")
         else:
@@ -291,21 +284,20 @@ async def delete_generations(dataset):
             )
             pbar.update(1)
 
-    await asyncio.gather(*[delete(row.id) for row in df.itertuples(index=False)])
+    await asyncio.gather(*[delete(gen) for gen in generations])
     pbar.close()
     print()
 
 
 async def delete_generations_already_uploaded_to_notion(
-    dataset,
+    generations,
     db_id,
 ):
-    df = pd.read_csv(get_output_path(dataset))
-    total = len(df)
-
+    total = len(generations)
     pbar = tqdm(total=total, desc="Deleting uploaded generations")
 
-    async def delete(generation_id):
+    async def delete(generation):
+        generation_id = generation.get("id")
         for _ in range(MAX_RETRIES):
             try:
                 file_name = f"{generation_id}.png"
@@ -318,91 +310,113 @@ async def delete_generations_already_uploaded_to_notion(
                     )
                 pbar.update(1)
                 return
+            except aiohttp.ClientError as e:
+                if not http_retryable(e.status):
+                    pbar.write(f"❌ {generation_id} HTTP error: {e}, not retryable")
+                    pbar.update(1)
+                    return
+                pbar.write(f"⚠️  {generation_id} HTTP error: {e}, retrying...")
             except Exception as e:
                 pbar.write(f"⚠️  {generation_id} error: {e}, retrying...")
         else:
             pbar.write(f"❌ {generation_id} failed after {MAX_RETRIES} attempts")
             pbar.update(1)
 
-    await asyncio.gather(*[delete(row.id) for row in df.itertuples(index=False)])
+    await asyncio.gather(*[delete(gen) for gen in generations])
     pbar.close()
     print()
 
 
 async def trash_generations_already_uploaded_to_notion(
-    dataset,
+    generations,
     db_id,
 ):
-    df = pd.read_csv(get_output_path(dataset))
-    total = len(df)
-
+    total = len(generations)
     pbar = tqdm(total=total, desc="Trashing uploaded generations")
 
-    async def trash(generation_id):
+    async def trash(generation):
+        generation_id = generation.get("id")
         for _ in range(MAX_RETRIES):
             try:
                 file_name = f"{generation_id}.png"
                 if await is_page_exists_in_db(db_id, file_name):
                     await archive_generation(generation_id)
-                    pbar.write(f"✅ {generation_id} trashed")
+                    pbar.write(f"✅ {generation_id}")
                 else:
                     pbar.write(
                         f"⏭️  {generation_id} skipped, not uploaded to notion yet"
                     )
                 pbar.update(1)
                 return
+            except aiohttp.ClientError as e:
+                if not http_retryable(e.status):
+                    pbar.write(f"❌ {generation_id} HTTP error: {e}, not retryable")
+                    pbar.update(1)
+                    return
+                pbar.write(f"⚠️  {generation_id} HTTP error: {e}, retrying...")
             except Exception as e:
                 pbar.write(f"⚠️  {generation_id} error: {e}, retrying...")
         else:
             pbar.write(f"❌ {generation_id} failed after {MAX_RETRIES} attempts")
             pbar.update(1)
 
-    await asyncio.gather(*[trash(row.id) for row in df.itertuples(index=False)])
+    await asyncio.gather(*[trash(gen) for gen in generations])
     pbar.close()
     print()
 
 
 async def upload_to_notion(
-    dataset: str,
     image_folder: str,
-    db_id,
+    db_id: str,
     upload_to_notion=True,
     trash_in_sora=False,
     remove_in_sora=False,
+    add_prompt_to_image=True,
+    limit=100,
+    dataset: str = None,  # save to dataset if provided
 ):
     if trash_in_sora and remove_in_sora:
         raise ValueError("trash_in_sora and remove_in_sora cannot be both True.")
 
-    await save_dataset_generations_from_recent_tasks(dataset=dataset)
+    data = await fetch_recent_tasks(limit=limit, archived=False)
+    tasks = data.get("task_responses", [])
+    generations = get_generations_from_tasks(tasks)
 
-    await download_all_images(
-        dataset=dataset,
-        download_folder=image_folder,
-    )
+    await download_all_images(generations=generations, download_folder=image_folder)
+
+    if dataset:
+        save_to_dataset(dataset=dataset, data=generations)
+
+    if add_prompt_to_image:
+        add_prompt_to_images(generations=generations, folder=image_folder)
 
     if upload_to_notion:
         await upload_all_images_to_notion(
-            dataset=dataset,
-            db_id=db_id,
-            image_folder=image_folder,
+            generations=generations, db_id=db_id, image_folder=image_folder
         )
 
     if trash_in_sora:
         await trash_generations_already_uploaded_to_notion(
-            dataset=dataset,
-            db_id=db_id,
+            generations=generations, db_id=db_id
         )
 
     if remove_in_sora:
         await delete_generations_already_uploaded_to_notion(
-            dataset=dataset,
-            db_id=db_id,
+            generations=generations, db_id=db_id
         )
 
 
-async def cleanup_trash(dataset: str):
-    await save_dataset_generations_from_list_tasks(dataset=dataset, archived=True)
-    await delete_generations(dataset=dataset)
+async def cleanup_trash(
+    task_limit=100,
+    dataset: str = None,  # save to dataset if provided
+):
+    tasks = await fetch_all_lists_tasks(limit=task_limit, archived=True)
+    generations = get_generations_from_tasks(tasks)
+
+    if dataset:
+        save_to_dataset(dataset=dataset, data=generations)
+
+    await delete_generations(generations=generations)
 
 
 async def cleanup_tasks():
