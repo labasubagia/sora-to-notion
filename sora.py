@@ -1,13 +1,13 @@
 import asyncio
-import json
 import os
 
 import aiohttp
 import pandas as pd
 from dotenv import dotenv_values
+from tqdm.asyncio import tqdm
 
 from notion import is_page_exists_in_db, upload_all_images_to_notion
-from util import MAX_RETRIES, get_output_path, msg_prefix_progress
+from util import MAX_RETRIES, get_output_path
 
 config = dotenv_values()
 
@@ -130,34 +130,32 @@ async def delete_empty_tasks():
             task_id = task.get("id")
             empty_tasks.append(task_id)
 
-    processed = 0
     total = len(empty_tasks)
-    print(f"Total empty tasks to delete: {total}\n")
+    pbar = tqdm(total=total, desc="Deleting empty tasks")
 
     async def delete(task_id):
-        nonlocal processed
         for _ in range(MAX_RETRIES):
             try:
-                archive_data = await archive_task(task_id)
-                deleted_data = await delete_task(task_id)
-                processed += 1
-                print(
-                    f"[{msg_prefix_progress(processed, total)}] task {task_id} deleted\n"
-                    f"archive: {json.dumps(archive_data)}\n"
-                    f"delete: {json.dumps(deleted_data)}\n"
+                _ = await archive_task(task_id)
+                _ = await delete_task(task_id)
+                pbar.write(
+                    f"✅ task {task_id}\n"
+                    # f"archive: {json.dumps(archive_data)}\n"
+                    # f"delete: {json.dumps(deleted_data)}"
                 )
+                pbar.update(1)
                 return
             except Exception as e:
-                print(
-                    f"[{msg_prefix_progress(processed, total)}] task {task_id} failed to delete: {e}, retrying...\n"
-                )
+                pbar.write(f"⚠️  task {task_id} failed to delete: {e}, retrying...")
         else:
-            processed += 1
-            print(
-                f"[{msg_prefix_progress(processed, total)}] task {task_id} failed to delete after {MAX_RETRIES} attempts.\n"
+            pbar.write(
+                f"❌ task {task_id} failed to delete after {MAX_RETRIES} attempts"
             )
+            pbar.update(1)
 
     await asyncio.gather(*[delete(task_id) for task_id in empty_tasks])
+    pbar.close()
+    print()
 
 
 def save_dataset_generations(dataset: str, tasks):
@@ -229,48 +227,40 @@ async def download_generation_image(download_folder, generation_id):
 async def download_all_images(dataset, download_folder="sora_images"):
 
     df = pd.read_csv(get_output_path(dataset))
-    processed = 0
     total = len(df)
 
-    async def download(row):
-        nonlocal processed
+    pbar = tqdm(total=total, desc="Downloading images")
 
+    async def download(row):
         generation_id = row.id
         file_name = f"{generation_id}.png"
         file_path = get_output_path(os.path.join(download_folder, file_name))
 
         if os.path.exists(file_path):
-            processed += 1
-            print(
-                f"[{msg_prefix_progress(processed, total)}] {file_path} skipped, already exists",
-            )
+            pbar.write(f"⏭️  {file_name} skipped, already exists")
+            pbar.update(1)
             return
 
         for _ in range(MAX_RETRIES):
             try:
-                # async with aiohttp.ClientSession(headers=headers) as session:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(row.url) as response:
                         response.raise_for_status()
                         content = await response.read()
                         with open(file_path, "wb") as f:
                             f.write(content)
-                        processed += 1
-                        print(
-                            f"[{msg_prefix_progress(processed, total)}] {file_path} downloaded",
-                        )
-                        break
+                        pbar.write(f"✅ {file_name}")
+                        pbar.update(1)
+                        return
             except Exception as e:
-                print(
-                    f"[{msg_prefix_progress(processed, total)}] {file_path} download error: {e}, retrying..."
-                )
+                pbar.write(f"⚠️  {file_name} error: {e}, retrying...")
         else:
-            processed += 1
-            print(
-                f"[{msg_prefix_progress(processed, total)}] {file_path} failed to download after {MAX_RETRIES} attempts."
-            )
+            pbar.write(f"❌ {file_name} failed after {MAX_RETRIES} attempts")
+            pbar.update(1)
 
     await asyncio.gather(*[download(row) for row in df.itertuples(index=False)])
+    pbar.close()
+    print()
 
 
 async def delete_generation(id: str):
@@ -283,30 +273,28 @@ async def delete_generation(id: str):
 
 async def delete_generations(dataset):
     df = pd.read_csv(get_output_path(dataset))
-    processed = 0
     total = len(df)
 
+    pbar = tqdm(total=total, desc="Deleting generations")
+
     async def delete(generation_id):
-        nonlocal processed
         for _ in range(MAX_RETRIES):
             try:
                 await delete_generation(generation_id)
-                processed += 1
-                print(
-                    f"[{msg_prefix_progress(processed, total)}] {generation_id} deleted"
-                )
+                pbar.write(f"✅ {generation_id}")
+                pbar.update(1)
                 return
             except Exception as e:
-                print(
-                    f"[{msg_prefix_progress(processed, total)}] {generation_id} error: {e}, retrying..."
-                )
+                pbar.write(f"⚠️  {generation_id} error: {e}, retrying...")
         else:
-            processed += 1
-            print(
-                f"[{msg_prefix_progress(processed, total)}] {generation_id} failed to delete after {MAX_RETRIES} attempts."
+            pbar.write(
+                f"❌ {generation_id} failed to delete after {MAX_RETRIES} attempts"
             )
+            pbar.update(1)
 
     await asyncio.gather(*[delete(row.id) for row in df.itertuples(index=False)])
+    pbar.close()
+    print()
 
 
 async def delete_generations_already_uploaded_to_notion(
@@ -314,32 +302,32 @@ async def delete_generations_already_uploaded_to_notion(
     db_id,
 ):
     df = pd.read_csv(get_output_path(dataset))
-    processed = 0
     total = len(df)
 
+    pbar = tqdm(total=total, desc="Deleting uploaded generations")
+
     async def delete(generation_id):
-        nonlocal processed
         for _ in range(MAX_RETRIES):
             try:
                 file_name = f"{generation_id}.png"
                 if await is_page_exists_in_db(db_id, file_name):
                     await delete_generation(generation_id)
-                    processed += 1
-                    print(
-                        f"[{msg_prefix_progress(processed, total)}] {generation_id} deleted"
-                    )
+                    pbar.write(f"✅ {generation_id} deleted")
                 else:
-                    processed += 1
-                    print(
-                        f"[{msg_prefix_progress(processed, total)}] {generation_id} skipped, not uploaded to notion yet"
+                    pbar.write(
+                        f"⏭️  {generation_id} skipped, not uploaded to notion yet"
                     )
+                pbar.update(1)
                 return
             except Exception as e:
-                print(
-                    f"[{msg_prefix_progress(processed, total)}] {generation_id} error: {e}, retrying..."
-                )
+                pbar.write(f"⚠️  {generation_id} error: {e}, retrying...")
+        else:
+            pbar.write(f"❌ {generation_id} failed after {MAX_RETRIES} attempts")
+            pbar.update(1)
 
     await asyncio.gather(*[delete(row.id) for row in df.itertuples(index=False)])
+    pbar.close()
+    print()
 
 
 async def trash_generations_already_uploaded_to_notion(
@@ -347,32 +335,32 @@ async def trash_generations_already_uploaded_to_notion(
     db_id,
 ):
     df = pd.read_csv(get_output_path(dataset))
-    processed = 0
     total = len(df)
 
+    pbar = tqdm(total=total, desc="Trashing uploaded generations")
+
     async def trash(generation_id):
-        nonlocal processed
         for _ in range(MAX_RETRIES):
             try:
                 file_name = f"{generation_id}.png"
                 if await is_page_exists_in_db(db_id, file_name):
                     await archive_generation(generation_id)
-                    processed += 1
-                    print(
-                        f"[{msg_prefix_progress(processed, total)}] {generation_id} trashed"
-                    )
+                    pbar.write(f"✅ {generation_id} trashed")
                 else:
-                    processed += 1
-                    print(
-                        f"[{msg_prefix_progress(processed, total)}] {generation_id} skipped, not uploaded to notion yet"
+                    pbar.write(
+                        f"⏭️  {generation_id} skipped, not uploaded to notion yet"
                     )
+                pbar.update(1)
                 return
             except Exception as e:
-                print(
-                    f"[{msg_prefix_progress(processed, total)}] {generation_id} error: {e}, retrying..."
-                )
+                pbar.write(f"⚠️  {generation_id} error: {e}, retrying...")
+        else:
+            pbar.write(f"❌ {generation_id} failed after {MAX_RETRIES} attempts")
+            pbar.update(1)
 
     await asyncio.gather(*[trash(row.id) for row in df.itertuples(index=False)])
+    pbar.close()
+    print()
 
 
 async def upload_to_notion(
@@ -386,54 +374,37 @@ async def upload_to_notion(
     if trash_in_sora and remove_in_sora:
         raise ValueError("trash_in_sora and remove_in_sora cannot be both True.")
 
-    print("📊 Saving dataset from generations...")
     await save_dataset_generations_from_recent_tasks(dataset=dataset)
-    print("✅ Dataset saved.\n")
 
-    print("🖼️  Downloading all images...")
     await download_all_images(
         dataset=dataset,
         download_folder=image_folder,
     )
-    print("✅ All images downloaded.\n")
 
     if upload_to_notion:
-        print("📤 Uploading all images to Notion...")
         await upload_all_images_to_notion(
             dataset=dataset,
             db_id=db_id,
             image_folder=image_folder,
         )
-        print("✅ All images uploaded to Notion.\n")
 
     if trash_in_sora:
-        print("🗑️  Trashing generations already uploaded to Notion...")
         await trash_generations_already_uploaded_to_notion(
             dataset=dataset,
             db_id=db_id,
         )
-        print("✅ Trashing completed.\n")
 
     if remove_in_sora:
-        print("🗑️  Deleting generations already uploaded to Notion...")
         await delete_generations_already_uploaded_to_notion(
             dataset=dataset,
             db_id=db_id,
         )
-        print("✅ Deletion completed.\n")
 
 
 async def cleanup_trash(dataset: str):
-    print("📊 Saving dataset from generations in trash folder...")
     await save_dataset_generations_from_list_tasks(dataset=dataset, archived=True)
-    print("✅ Dataset saved.\n")
-
-    print("🗑️  Deleting all generations in trash...")
     await delete_generations(dataset=dataset)
-    print("✅ Cleanup completed.\n")
 
 
 async def cleanup_tasks():
-    print("🗑️  Deleting all empty tasks...")
     await delete_empty_tasks()
-    print("✅ All empty tasks deleted.\n")

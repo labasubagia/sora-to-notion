@@ -4,8 +4,9 @@ import os
 import aiohttp
 import pandas as pd
 from dotenv import dotenv_values
+from tqdm.asyncio import tqdm
 
-from util import MAX_RETRIES, get_output_path, msg_prefix_progress
+from util import MAX_RETRIES, get_output_path
 
 config = dotenv_values()
 
@@ -145,44 +146,35 @@ async def add_page_to_db(db_id, file_path, prompt, model="Sora", face="_original
 
 async def upload_all_images_to_notion(dataset, db_id, image_folder):
     df = pd.read_csv(get_output_path(dataset))
-    processed = 0
     total = len(df)
+    pbar = tqdm(total=total, desc="Uploading to Notion")
 
     async def upload(generation_id, prompt):
-        nonlocal processed
         file_name = f"{generation_id}.png"
         file_path = get_output_path(os.path.join(image_folder, file_name))
         if not os.path.exists(file_path):
-            processed += 1
-            print(
-                f"[{msg_prefix_progress(processed, total)}] {file_path} not found, skipped."
-            )
+            pbar.write(f"⚠️  {file_name} not found, skipped")
+            pbar.update(1)
             return
 
         for _ in range(MAX_RETRIES):
             try:
                 if await is_page_exists_in_db(db_id, file_name):
-                    processed += 1
-                    print(
-                        f"[{msg_prefix_progress(processed, total)}] {file_path} skipped, already exists",
-                    )
+                    pbar.write(f"⏭️  {file_name} skipped, already exists")
+                    pbar.update(1)
                 else:
                     await add_page_to_db(db_id, file_path, prompt, model="Sora")
-                    processed += 1
-                    print(
-                        f"[{msg_prefix_progress(processed, total)}] {file_path} uploaded"
-                    )
+                    pbar.write(f"✅ {file_name} uploaded")
+                    pbar.update(1)
                 return
             except Exception as e:
-                print(
-                    f"[{msg_prefix_progress(processed, total)}] {file_path} failed: {e}"
-                )
+                pbar.write(f"⚠️  {file_name} failed: {e}")
         else:
-            processed += 1
-            print(
-                f"[{msg_prefix_progress(processed, total)}] {file_path} failed after {MAX_RETRIES} retries"
-            )
+            pbar.write(f"❌ {file_name} failed after {MAX_RETRIES} retries")
+            pbar.update(1)
 
     await asyncio.gather(
         *[upload(row.id, row.prompt) for row in df.itertuples(index=False)]
     )
+    pbar.close()
+    print()  # Add spacing after progress bar
