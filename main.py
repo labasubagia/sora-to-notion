@@ -13,9 +13,6 @@ app = typer.Typer()
 
 @app.command()
 def sora_upload_to_notion(
-    dataset: Annotated[
-        str, typer.Option(help="Path to the dataset CSV file")
-    ] = "sora_generations.csv",
     image_folder: Annotated[
         str, typer.Option(help="Path to the folder containing images")
     ] = "sora_images",
@@ -32,7 +29,6 @@ def sora_upload_to_notion(
 ):
     asyncio.run(
         sora.upload_to_notion(
-            dataset,
             image_folder,
             db_id,
             upload_to_notion=upload_to_notion,
@@ -43,12 +39,8 @@ def sora_upload_to_notion(
 
 
 @app.command()
-def sora_cleanup_trash(
-    dataset: Annotated[
-        str, typer.Option(help="Path to the dataset CSV file")
-    ] = "sora_trash_generations.csv",
-):
-    asyncio.run(sora.cleanup_trash(dataset))
+def sora_cleanup_trash():
+    asyncio.run(sora.cleanup_trash())
 
 
 @app.command()

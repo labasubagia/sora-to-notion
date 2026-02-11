@@ -44,3 +44,14 @@ def clean_output_path():
             shutil.rmtree(item)
         else:
             item.unlink()
+
+
+def http_retryable(status_code: int) -> bool:
+    retryable_statuses = (
+        403,  # case for chatgpt & sora
+        500,
+        502,
+        503,
+        504,
+    )
+    return status_code in retryable_statuses
