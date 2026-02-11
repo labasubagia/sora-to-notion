@@ -17,12 +17,11 @@ config = dotenv_values()
 
 BASE_URL = "https://chatgpt.com/backend-api"
 
-API_KEY = config.get("CHATGPT_AUTHORIZATION_TOKEN")
-USER_AGENT = config.get("CHATGPT_USER_AGENT")
 
 headers = {
-    "Authorization": f"Bearer {API_KEY}",
-    "User-Agent": USER_AGENT,
+    "Authorization": config.get("CHATGPT_AUTHORIZATION_TOKEN"),
+    "User-Agent": config.get("CHATGPT_USER_AGENT"),
+    "Cookie": config.get("CHATGPT_COOKIE_STRING"),
     "Content-Type": "application/json",
 }
 

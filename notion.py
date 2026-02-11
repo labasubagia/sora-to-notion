@@ -12,11 +12,10 @@ config = dotenv_values()
 
 BASE_URL = "https://api.notion.com"
 
-API_KEY = config.get("NOTION_API_KEY")
 DB_ID = config.get("NOTION_DATABASE_ID")
 
 headers = {
-    "Authorization": f"Bearer {API_KEY}",
+    "Authorization": f"Bearer {config.get('NOTION_API_KEY')}",
     "Notion-Version": "2025-09-03",
     "Content-Type": "application/json",
 }

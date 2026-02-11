@@ -12,12 +12,11 @@ from util import MAX_RETRIES, get_output_path
 config = dotenv_values()
 
 BASE_URL = "https://sora.chatgpt.com/backend"
-AUTHORIZATION_TOKEN = config.get("CHATGPT_AUTHORIZATION_TOKEN")
-USER_AGENT = config.get("CHATGPT_USER_AGENT")
 
 headers = {
-    "Authorization": f"Bearer {AUTHORIZATION_TOKEN}",
-    "User-Agent": USER_AGENT,
+    "Authorization": f"Bearer {config.get('CHATGPT_AUTHORIZATION_TOKEN')}",
+    "User-Agent": config.get("CHATGPT_USER_AGENT"),
+    "Cookie": config.get("CHATGPT_COOKIE_STRING"),
     "Content-Type": "application/json",
 }
 
