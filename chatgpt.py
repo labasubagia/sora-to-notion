@@ -263,6 +263,16 @@ async def delete_conversation_of_image_generation_uploaded_to_notion(dataset, db
                     f"[{msg_prefix_progress(processed, total)}] Conversation ID {row.conversation_id} deleted."
                 )
                 return
+            except aiohttp.ClientResponseError as e:
+                if e.status == 404:
+                    processed += 1
+                    print(
+                        f"[{msg_prefix_progress(processed, total)}] Conversation ID {row.conversation_id} not found, skipped."
+                    )
+                    return
+                print(
+                    f"[{msg_prefix_progress(processed, total)}] Conversation ID {row.conversation_id} delete HTTP error: {e.status} {e.message}, retrying..."
+                )
             except Exception as e:
                 print(
                     f"[{msg_prefix_progress(processed, total)}] Conversation ID {row.conversation_id} delete error: {e}, retrying..."
