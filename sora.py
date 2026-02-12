@@ -156,13 +156,7 @@ async def delete_empty_tasks():
         async def delete(task_id):
             async with semaphore:
                 try:
-                    try:
-                        await archive_task(session, task_id)
-                    except Exception as archive_err:
-                        pbar.write(
-                            f"⚠️  {task_id} archive failed: {archive_err}, continuing to delete..."
-                        )
-
+                    await archive_task(session, task_id)
                     await delete_task(session, task_id)
                     pbar.write(f"✅ {task_id}")
                 except Exception as e:
@@ -170,7 +164,9 @@ async def delete_empty_tasks():
                 finally:
                     pbar.update(1)
 
-        await asyncio.gather(*[delete(task_id) for task_id in empty_tasks])
+        await asyncio.gather(
+            *[delete(task_id) for task_id in empty_tasks], return_exceptions=True
+        )
 
     pbar.close()
     print()
