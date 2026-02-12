@@ -43,23 +43,27 @@ async def archive_generation(generation_id: str, is_archived=True):
             return json_data
 
 
-async def archive_task(task_id: str):
+@retry_http()
+async def archive_task(session, task_id: str):
     """
     Trash a task in Sora
     """
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.post(f"{BASE_URL}/video_gen/{task_id}/archive") as response:
-            response.raise_for_status()
-            json_data = await response.json()
-            return json_data
+    async with session.post(
+        f"{BASE_URL}/video_gen/{task_id}/archive", headers=headers
+    ) as response:
+        response.raise_for_status()
+        json_data = await response.json()
+        return json_data
 
 
-async def delete_task(task_id: str):
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.delete(f"{BASE_URL}/video_gen/{task_id}") as response:
-            response.raise_for_status()
-            json_data = await response.json()
-            return json_data
+@retry_http()
+async def delete_task(session, task_id: str):
+    async with session.delete(
+        f"{BASE_URL}/video_gen/{task_id}", headers=headers
+    ) as response:
+        response.raise_for_status()
+        json_data = await response.json()
+        return json_data
 
 
 async def fetch_recent_tasks(limit=100, before_task_id: str = None, archived=False):
@@ -140,36 +144,30 @@ async def delete_empty_tasks():
 
     total = len(empty_tasks)
     pbar = tqdm(total=total, desc="Deleting empty tasks")
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
 
-    async def delete(task_id):
-        for _ in range(MAX_RETRIES):
-            try:
+    async with aiohttp.ClientSession(headers=headers) as session:
+
+        async def delete(task_id):
+            async with semaphore:
                 try:
-                    _ = await archive_task(task_id)
-                except Exception as archive_err:
-                    pbar.write(
-                        f"⚠️  {task_id} archive failed: {archive_err}, continuing to delete..."
-                    )
+                    try:
+                        await archive_task(session, task_id)
+                    except Exception as archive_err:
+                        pbar.write(
+                            f"⚠️  {task_id} archive failed: {archive_err}, continuing to delete..."
+                        )
 
-                _ = await delete_task(task_id)
-                pbar.write(f"✅ {task_id}")
-                pbar.update(1)
-                return
-            except aiohttp.ClientError as e:
-                if not http_retryable(e.status):
-                    pbar.write(f"❌ task {task_id} HTTP error: {e}, not retryable")
+                    # await archive_task(session, task_id)
+                    await delete_task(session, task_id)
+                    pbar.write(f"✅ {task_id}")
+                except Exception as e:
+                    pbar.write(f"❌ task {task_id} failed: {e}")
+                finally:
                     pbar.update(1)
-                    return
-                pbar.write(f"⚠️  task {task_id} HTTP error: {e}, retrying...")
-            except Exception as e:
-                pbar.write(f"⚠️  task {task_id} failed to delete: {e}, retrying...")
-        else:
-            pbar.write(
-                f"❌ task {task_id} failed to delete after {MAX_RETRIES} attempts"
-            )
-            pbar.update(1)
 
-    await asyncio.gather(*[delete(task_id) for task_id in empty_tasks])
+        await asyncio.gather(*[delete(task_id) for task_id in empty_tasks])
+
     pbar.close()
     print()
 
