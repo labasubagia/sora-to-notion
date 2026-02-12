@@ -7,7 +7,14 @@ from tqdm.asyncio import tqdm
 
 from img import add_prompt_to_images
 from notion import is_page_exists_in_db, upload_all_images_to_notion
-from util import MAX_RETRIES, get_output_path, http_retryable, save_to_dataset
+from util import (
+    MAX_CONCURRENT_DOWNLOADS,
+    MAX_RETRIES,
+    get_output_path,
+    http_retryable,
+    retry_http,
+    save_to_dataset,
+)
 
 config = dotenv_values()
 
@@ -194,58 +201,50 @@ async def get_generation_download_url(generation_id):
             return json_data.get("url", None)
 
 
+@retry_http()
+async def download_image(session, url, file_path):
+    async with session.get(url, headers={}) as response:
+        response.raise_for_status()
+        content = await response.read()
+        await asyncio.to_thread(lambda: open(file_path, "wb").write(content))
+
+
 async def download_generation_image(download_folder, generation_id):
     url = await get_generation_download_url(generation_id)
-    # async with aiohttp.ClientSession(headers=headers) as session:
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            file_name = f"{generation_id}.png"
-            file_path = get_output_path(os.path.join(download_folder, file_name))
-            response.raise_for_status()
-            content = await response.read()
-            with open(file_path, "wb") as f:
-                f.write(content)
+    file_name = f"{generation_id}.png"
+    file_path = get_output_path(os.path.join(download_folder, file_name))
+    await download_image(url, file_path)
 
 
 async def download_all_images(generations, download_folder="sora_images"):
     total = len(generations)
     pbar = tqdm(total=total, desc="Downloading images")
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
 
-    async def download(generation):
-        generation_id = generation["id"]
-        url = generation["url"]
-        file_name = f"{generation_id}.png"
-        file_path = get_output_path(os.path.join(download_folder, file_name))
+    async with aiohttp.ClientSession() as session:
 
-        if os.path.exists(file_path):
-            pbar.write(f"⏭️  {file_name} skipped, already exists")
-            pbar.update(1)
-            return
+        async def download(generation):
+            async with semaphore:
+                generation_id = generation["id"]
+                url = generation["url"]
+                file_name = f"{generation_id}.png"
+                file_path = get_output_path(os.path.join(download_folder, file_name))
 
-        for _ in range(MAX_RETRIES):
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url) as response:
-                        response.raise_for_status()
-                        content = await response.read()
-                        with open(file_path, "wb") as f:
-                            f.write(content)
-                        pbar.write(f"✅ {file_name}")
-                        pbar.update(1)
-                        return
-            except aiohttp.ClientError as e:
-                if not http_retryable(e.status):
-                    pbar.write(f"❌ {file_name} HTTP error: {e}, not retryable")
+                if os.path.exists(file_path):
+                    pbar.write(f"⏭️  {file_name} skipped, already exists")
                     pbar.update(1)
                     return
-                pbar.write(f"⚠️  {file_name} HTTP error: {e}, retrying...")
-            except Exception as e:
-                pbar.write(f"⚠️  {file_name} error: {e}, retrying...")
-        else:
-            pbar.write(f"❌ {file_name} failed after {MAX_RETRIES} attempts")
-            pbar.update(1)
 
-    await asyncio.gather(*[download(gen) for gen in generations])
+                try:
+                    await download_image(session, url, file_path)
+                    pbar.write(f"✅ {file_name}")
+                except Exception as e:
+                    pbar.write(f"❌ {file_name} failed: {e}")
+                finally:
+                    pbar.update(1)
+
+        await asyncio.gather(*[download(gen) for gen in generations])
+
     pbar.close()
     print()
 
