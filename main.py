@@ -72,6 +72,9 @@ def chatgpt_upload_to_notion(
     dataset: Annotated[
         str, typer.Option(help="Save generations to dataset CSV file")
     ] = f"chatgpt_{datetime.now().isoformat()}.csv",
+    limit: Annotated[
+        int, typer.Option(help="Limit number of image generations to process")
+    ] = 100,
 ):
     asyncio.run(
         chatgpt.upload_to_notion(
@@ -80,6 +83,7 @@ def chatgpt_upload_to_notion(
             upload_to_notion=upload_to_notion,
             remove_in_chatgpt=remove_in_chatgpt,
             dataset=dataset,
+            limit=limit,
         )
     )
 
