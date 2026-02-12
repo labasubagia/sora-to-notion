@@ -298,7 +298,7 @@ async def delete_generations_already_uploaded_to_notion(
                 file_name = f"{generation_id}.png"
 
                 try:
-                    if await is_page_exists_in_db(db_id, file_name):
+                    if await is_page_exists_in_db(session, db_id, file_name):
                         await delete_generation(session, generation_id)
                         pbar.write(f"✅ {generation_id} deleted")
                     else:
@@ -332,7 +332,7 @@ async def trash_generations_already_uploaded_to_notion(
                 file_name = f"{generation_id}.png"
 
                 try:
-                    if await is_page_exists_in_db(db_id, file_name):
+                    if await is_page_exists_in_db(session, db_id, file_name):
                         await archive_generation(session, generation_id)
                         pbar.write(f"✅ {generation_id}")
                     else:

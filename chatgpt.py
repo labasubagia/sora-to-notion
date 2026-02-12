@@ -229,7 +229,7 @@ async def delete_conversation_of_image_generation_uploaded_to_notion(
                 conversation_id = row["conversation_id"]
 
                 try:
-                    exists = await is_page_exists_in_db(db_id, file_name)
+                    exists = await is_page_exists_in_db(session, db_id, file_name)
                     if not exists:
                         pbar.write(f"⏭️  {file_name} not found in Notion, skipped")
                         pbar.update(1)
