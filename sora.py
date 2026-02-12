@@ -369,8 +369,9 @@ async def upload_to_notion(
 
     async with aiohttp.ClientSession() as session:
         data = await fetch_recent_tasks(session, limit=limit, archived=False)
-        tasks = data.get("task_responses", [])
-        generations = get_generations_from_tasks(tasks)
+
+    tasks = data.get("task_responses", [])
+    generations = get_generations_from_tasks(tasks)
 
     if dataset:
         save_to_dataset(dataset=dataset, data=generations)
