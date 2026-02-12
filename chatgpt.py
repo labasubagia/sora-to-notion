@@ -1,5 +1,6 @@
 import asyncio
 import os
+from base64 import b64decode
 from datetime import datetime, timezone
 
 import aiohttp
@@ -20,12 +21,22 @@ config = dotenv_values()
 
 BASE_URL = "https://chatgpt.com/backend-api"
 
-headers = {
-    "Authorization": config.get("CHATGPT_AUTHORIZATION_TOKEN"),
-    "User-Agent": config.get("CHATGPT_USER_AGENT"),
-    "Cookie": config.get("CHATGPT_COOKIE_STRING"),
-    "Content-Type": "application/json",
-}
+
+def get_headers():
+    headers = {
+        "Authorization": f"Bearer {config.get('CHATGPT_AUTHORIZATION_TOKEN', '').strip()}",
+        "User-Agent": config.get("CHATGPT_USER_AGENT", "").strip(),
+        "Content-Type": "application/json",
+    }
+
+    cookie_base64 = config.get("CHATGPT_COOKIE_STRING_BASE64", "").strip()
+    if cookie_base64:
+        headers["Cookie"] = b64decode(cookie_base64).decode("utf-8").strip()
+
+    return headers
+
+
+headers = get_headers()
 
 
 @retry_http()

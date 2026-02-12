@@ -5,6 +5,7 @@ import aiohttp
 from dotenv import dotenv_values
 from tqdm.asyncio import tqdm
 
+from chatgpt import get_headers
 from img import add_prompt_to_images
 from notion import is_page_exists_in_db, upload_all_images_to_notion
 from util import (
@@ -19,12 +20,7 @@ config = dotenv_values()
 
 BASE_URL = "https://sora.chatgpt.com/backend"
 
-headers = {
-    "Authorization": f"Bearer {config.get('CHATGPT_AUTHORIZATION_TOKEN')}",
-    "User-Agent": config.get("CHATGPT_USER_AGENT"),
-    "Cookie": config.get("CHATGPT_COOKIE_STRING"),
-    "Content-Type": "application/json",
-}
+headers = get_headers()
 
 
 @retry_http()
