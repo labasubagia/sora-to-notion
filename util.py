@@ -7,6 +7,7 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 
 MAX_RETRIES = 5
 MAX_CONCURRENT_DOWNLOADS = 10
+MAX_CONCURRENT_REQUESTS = 10
 
 OUTPUT_PATH = "./output"
 

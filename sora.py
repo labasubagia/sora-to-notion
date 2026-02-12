@@ -9,6 +9,7 @@ from img import add_prompt_to_images
 from notion import is_page_exists_in_db, upload_all_images_to_notion
 from util import (
     MAX_CONCURRENT_DOWNLOADS,
+    MAX_CONCURRENT_REQUESTS,
     MAX_RETRIES,
     get_output_path,
     http_retryable,
@@ -144,7 +145,7 @@ async def delete_empty_tasks():
 
     total = len(empty_tasks)
     pbar = tqdm(total=total, desc="Deleting empty tasks")
-    semaphore = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
     async with aiohttp.ClientSession(headers=headers) as session:
 
@@ -158,7 +159,6 @@ async def delete_empty_tasks():
                             f"⚠️  {task_id} archive failed: {archive_err}, continuing to delete..."
                         )
 
-                    # await archive_task(session, task_id)
                     await delete_task(session, task_id)
                     pbar.write(f"✅ {task_id}")
                 except Exception as e:
@@ -247,41 +247,36 @@ async def download_all_images(generations, download_folder="sora_images"):
     print()
 
 
-async def delete_generation(id: str):
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.delete(f"{BASE_URL}/generations/{id}") as response:
-            response.raise_for_status()
-            json_data = await response.json()
-            return json_data
+@retry_http()
+async def delete_generation(session, id: str):
+    async with session.delete(
+        f"{BASE_URL}/generations/{id}", headers=headers
+    ) as response:
+        response.raise_for_status()
+        json_data = await response.json()
+        return json_data
 
 
 async def delete_generations(generations):
     total = len(generations)
     pbar = tqdm(total=total, desc="Deleting generations")
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-    async def delete(generation):
-        generation_id = generation.get("id")
-        for _ in range(MAX_RETRIES):
-            try:
-                await delete_generation(generation_id)
-                pbar.write(f"✅ {generation_id}")
-                pbar.update(1)
-                return
-            except aiohttp.ClientError as e:
-                if not http_retryable(e.status):
-                    pbar.write(f"❌ {generation_id} HTTP error: {e}, not retryable")
+    async with aiohttp.ClientSession() as session:
+
+        async def delete(generation):
+            async with semaphore:
+                generation_id = generation.get("id")
+                try:
+                    await delete_generation(session, generation_id)
+                    pbar.write(f"✅ {generation_id}")
+                except Exception as e:
+                    pbar.write(f"❌ {generation_id} failed: {e}")
+                finally:
                     pbar.update(1)
-                    return
-                pbar.write(f"⚠️  {generation_id} HTTP error: {e}, retrying...")
-            except Exception as e:
-                pbar.write(f"⚠️  {generation_id} error: {e}, retrying...")
-        else:
-            pbar.write(
-                f"❌ {generation_id} failed to delete after {MAX_RETRIES} attempts"
-            )
-            pbar.update(1)
 
-    await asyncio.gather(*[delete(gen) for gen in generations])
+        await asyncio.gather(*[delete(gen) for gen in generations])
+
     pbar.close()
     print()
 
