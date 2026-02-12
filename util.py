@@ -1,9 +1,13 @@
 import shutil
 from pathlib import Path
 
+import aiohttp
 import pandas as pd
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 MAX_RETRIES = 5
+MAX_CONCURRENT_DOWNLOADS = 10
+MAX_CONCURRENT_REQUESTS = 10
 
 OUTPUT_PATH = "./output"
 
@@ -54,11 +58,25 @@ def clean_output_path():
             item.unlink()
 
 
-def http_retryable(status_code: int) -> bool:
-    retryable_statuses = (
-        500,
-        502,
-        503,
-        504,
+def should_retry_http(exception):
+    """Determine if an HTTP exception should be retried"""
+    if isinstance(exception, aiohttp.ClientError):
+        status = exception.status
+        return status == 429 or status >= 500
+    return True
+
+
+def retry_http():
+    """Reusable retry decorator for async HTTP requests"""
+    return retry(
+        stop=stop_after_attempt(MAX_RETRIES),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception(should_retry_http),
+        reraise=True,
     )
-    return status_code in retryable_statuses
+
+
+def http_retryable(status_code: int) -> bool:
+    if status_code is None:
+        return False
+    return status_code == 429 or status_code >= 500
