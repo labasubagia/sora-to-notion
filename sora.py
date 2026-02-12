@@ -10,9 +10,7 @@ from notion import is_page_exists_in_db, upload_all_images_to_notion
 from util import (
     MAX_CONCURRENT_DOWNLOADS,
     MAX_CONCURRENT_REQUESTS,
-    MAX_RETRIES,
     get_output_path,
-    http_retryable,
     retry_http,
     save_to_dataset,
 )
@@ -29,19 +27,21 @@ headers = {
 }
 
 
-async def archive_generation(generation_id: str, is_archived=True):
+@retry_http()
+async def archive_generation(session, generation_id: str, is_archived=True):
     """
     Trash a generation in Sora,
 
     is_archived=True means trash, is_archived=False means untrash/restore
     """
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.post(
-            f"{BASE_URL}/generations/{generation_id}", json={"is_archived": is_archived}
-        ) as response:
-            response.raise_for_status()
-            json_data = await response.json()
-            return json_data
+    async with session.post(
+        f"{BASE_URL}/generations/{generation_id}",
+        json={"is_archived": is_archived},
+        headers=headers,
+    ) as response:
+        response.raise_for_status()
+        json_data = await response.json()
+        return json_data
 
 
 @retry_http()
@@ -67,23 +67,27 @@ async def delete_task(session, task_id: str):
         return json_data
 
 
-async def fetch_recent_tasks(limit=100, before_task_id: str = None, archived=False):
+@retry_http()
+async def fetch_recent_tasks(
+    session, limit=100, before_task_id: str = None, archived=False
+):
     params = {"limit": limit}
     if before_task_id:
         params["before"] = before_task_id
     if archived:
         params["archived"] = "true"
 
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.get(
-            f"{BASE_URL}/v2/recent_tasks", params=params
-        ) as response:
-            response.raise_for_status()
-            data_json = await response.json()
-            return data_json
+    async with session.get(
+        f"{BASE_URL}/v2/recent_tasks", params=params, headers=headers
+    ) as response:
+        response.raise_for_status()
+        data_json = await response.json()
+        return data_json
 
 
+@retry_http()
 async def fetch_list_tasks(
+    session,
     limit=20,
     after_task_id=None,
     archived=False,  # this is trash in sora
@@ -94,11 +98,12 @@ async def fetch_list_tasks(
     if after_task_id:
         params["after"] = after_task_id
 
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.get(f"{BASE_URL}/v2/list_tasks", params=params) as response:
-            response.raise_for_status()
-            json_data = await response.json()
-            return json_data
+    async with session.get(
+        f"{BASE_URL}/v2/list_tasks", params=params, headers=headers
+    ) as response:
+        response.raise_for_status()
+        json_data = await response.json()
+        return json_data
 
 
 async def fetch_all_lists_tasks(
@@ -109,28 +114,27 @@ async def fetch_all_lists_tasks(
     all_tasks = []
     has_more = True
     last_id = None
-    while has_more:
-        try:
-            data = await fetch_list_tasks(
-                limit=limit,
-                after_task_id=last_id,
-                archived=archived,
-            )
-            last_id = data.get("last_id", None)
-            has_more = data.get("has_more", False)
-            tasks = data.get("task_responses", [])
-            all_tasks.extend(tasks)
-            print(
-                f"Batch {batch_count} fetched, last_id {last_id}, has_more: {has_more}"
-            )
-            batch_count += 1
-        except aiohttp.ClientError as e:
-            if not http_retryable(e.status):
-                print(f"Batch {batch_count} fetch error, not retryable HTTP error: {e}")
+
+    async with aiohttp.ClientSession() as session:
+        while has_more:
+            try:
+                data = await fetch_list_tasks(
+                    session,
+                    limit=limit,
+                    after_task_id=last_id,
+                    archived=archived,
+                )
+                last_id = data.get("last_id", None)
+                has_more = data.get("has_more", False)
+                tasks = data.get("task_responses", [])
+                all_tasks.extend(tasks)
+                print(
+                    f"Batch {batch_count} fetched, last_id {last_id}, has_more: {has_more}"
+                )
+                batch_count += 1
+            except Exception as e:
+                print(f"Batch {batch_count} fetch error: {e}")
                 break
-            print(f"Batch {batch_count} fetch HTTP error, retrying..., error: {e}")
-        except Exception as e:
-            print(f"Batch {batch_count} fetch error, retrying..., error: {e}")
 
     return all_tasks
 
@@ -189,16 +193,6 @@ def get_generations_from_tasks(tasks):
     return generations
 
 
-async def get_generation_download_url(generation_id):
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.get(
-            f"{BASE_URL}/generations/{generation_id}/download"
-        ) as response:
-            response.raise_for_status()
-            json_data = await response.json()
-            return json_data.get("url", None)
-
-
 @retry_http()
 async def download_image(session, url, file_path):
     async with session.get(url, headers={}) as response:
@@ -207,11 +201,22 @@ async def download_image(session, url, file_path):
         await asyncio.to_thread(lambda: open(file_path, "wb").write(content))
 
 
-async def download_generation_image(download_folder, generation_id):
-    url = await get_generation_download_url(generation_id)
+@retry_http()
+async def get_generation_download_url(session, generation_id):
+    async with session.get(
+        f"{BASE_URL}/generations/{generation_id}/download", headers=headers
+    ) as response:
+        response.raise_for_status()
+        json_data = await response.json()
+        return json_data.get("url", None)
+
+
+@retry_http()
+async def download_generation_image(session, download_folder, generation_id):
+    url = await get_generation_download_url(session, generation_id)
     file_name = f"{generation_id}.png"
     file_path = get_output_path(os.path.join(download_folder, file_name))
-    await download_image(url, file_path)
+    await download_image(session, url, file_path)
 
 
 async def download_all_images(generations, download_folder="sora_images"):
@@ -287,34 +292,30 @@ async def delete_generations_already_uploaded_to_notion(
 ):
     total = len(generations)
     pbar = tqdm(total=total, desc="Deleting uploaded generations")
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-    async def delete(generation):
-        generation_id = generation.get("id")
-        for _ in range(MAX_RETRIES):
-            try:
+    async with aiohttp.ClientSession() as session:
+
+        async def delete(generation):
+            async with semaphore:
+                generation_id = generation.get("id")
                 file_name = f"{generation_id}.png"
-                if await is_page_exists_in_db(db_id, file_name):
-                    await delete_generation(generation_id)
-                    pbar.write(f"✅ {generation_id} deleted")
-                else:
-                    pbar.write(
-                        f"⏭️  {generation_id} skipped, not uploaded to notion yet"
-                    )
-                pbar.update(1)
-                return
-            except aiohttp.ClientError as e:
-                if not http_retryable(e.status):
-                    pbar.write(f"❌ {generation_id} HTTP error: {e}, not retryable")
-                    pbar.update(1)
-                    return
-                pbar.write(f"⚠️  {generation_id} HTTP error: {e}, retrying...")
-            except Exception as e:
-                pbar.write(f"⚠️  {generation_id} error: {e}, retrying...")
-        else:
-            pbar.write(f"❌ {generation_id} failed after {MAX_RETRIES} attempts")
-            pbar.update(1)
 
-    await asyncio.gather(*[delete(gen) for gen in generations])
+                try:
+                    if await is_page_exists_in_db(db_id, file_name):
+                        await delete_generation(session, generation_id)
+                        pbar.write(f"✅ {generation_id} deleted")
+                    else:
+                        pbar.write(
+                            f"⏭️  {generation_id} skipped, not uploaded to notion yet"
+                        )
+                except Exception as e:
+                    pbar.write(f"❌ {generation_id} failed: {e}")
+                finally:
+                    pbar.update(1)
+
+        await asyncio.gather(*[delete(gen) for gen in generations])
+
     pbar.close()
     print()
 
@@ -325,34 +326,30 @@ async def trash_generations_already_uploaded_to_notion(
 ):
     total = len(generations)
     pbar = tqdm(total=total, desc="Trashing uploaded generations")
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-    async def trash(generation):
-        generation_id = generation.get("id")
-        for _ in range(MAX_RETRIES):
-            try:
+    async with aiohttp.ClientSession() as session:
+
+        async def trash(generation):
+            async with semaphore:
+                generation_id = generation.get("id")
                 file_name = f"{generation_id}.png"
-                if await is_page_exists_in_db(db_id, file_name):
-                    await archive_generation(generation_id)
-                    pbar.write(f"✅ {generation_id}")
-                else:
-                    pbar.write(
-                        f"⏭️  {generation_id} skipped, not uploaded to notion yet"
-                    )
-                pbar.update(1)
-                return
-            except aiohttp.ClientError as e:
-                if not http_retryable(e.status):
-                    pbar.write(f"❌ {generation_id} HTTP error: {e}, not retryable")
-                    pbar.update(1)
-                    return
-                pbar.write(f"⚠️  {generation_id} HTTP error: {e}, retrying...")
-            except Exception as e:
-                pbar.write(f"⚠️  {generation_id} error: {e}, retrying...")
-        else:
-            pbar.write(f"❌ {generation_id} failed after {MAX_RETRIES} attempts")
-            pbar.update(1)
 
-    await asyncio.gather(*[trash(gen) for gen in generations])
+                try:
+                    if await is_page_exists_in_db(db_id, file_name):
+                        await archive_generation(session, generation_id)
+                        pbar.write(f"✅ {generation_id}")
+                    else:
+                        pbar.write(
+                            f"⏭️  {generation_id} skipped, not uploaded to notion yet"
+                        )
+                except Exception as e:
+                    pbar.write(f"❌ {generation_id} failed: {e}")
+                finally:
+                    pbar.update(1)
+
+        await asyncio.gather(*[trash(gen) for gen in generations])
+
     pbar.close()
     print()
 
@@ -370,14 +367,15 @@ async def upload_to_notion(
     if trash_in_sora and remove_in_sora:
         raise ValueError("trash_in_sora and remove_in_sora cannot be both True.")
 
-    data = await fetch_recent_tasks(limit=limit, archived=False)
-    tasks = data.get("task_responses", [])
-    generations = get_generations_from_tasks(tasks)
-
-    await download_all_images(generations=generations, download_folder=image_folder)
+    async with aiohttp.ClientSession() as session:
+        data = await fetch_recent_tasks(session, limit=limit, archived=False)
+        tasks = data.get("task_responses", [])
+        generations = get_generations_from_tasks(tasks)
 
     if dataset:
         save_to_dataset(dataset=dataset, data=generations)
+
+    await download_all_images(generations=generations, download_folder=image_folder)
 
     if add_prompt_to_image:
         add_prompt_to_images(generations=generations, folder=image_folder)
