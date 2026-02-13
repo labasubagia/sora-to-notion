@@ -126,7 +126,10 @@ def get_prompt_from_image_node_in_conversation(data, start_node_id, asset_pointe
         if msg:
             author = msg.get("author", {}).get("role")
             if author == "user":
-                return msg["content"]["parts"][0]
+                inputs = msg.get("content", {}).get("parts", [])
+                for part in inputs:
+                    if isinstance(part, str):
+                        return part
         current_id = node.get("parent")
 
     return None
