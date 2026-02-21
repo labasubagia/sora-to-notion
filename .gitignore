@@ -10,7 +10,5 @@ wheels/
 # Virtual environments
 .venv
 .env
-*.csv
 
 output/*
-!output/.gitkeep
