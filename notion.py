@@ -29,7 +29,7 @@ def get_notion_headers() -> dict[str, str]:
     config = get_config()
     return {
         "Authorization": f"Bearer {config.get('NOTION_API_KEY')}",
-        "Notion-Version": "2022-06-28",
+        "Notion-Version": "2025-09-03",
         "Content-Type": "application/json",
     }
 
