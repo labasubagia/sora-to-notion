@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import shutil
 from pathlib import Path
 
@@ -8,8 +10,11 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 MAX_RETRIES = 5
 MAX_CONCURRENT_DOWNLOADS = 10
 MAX_CONCURRENT_REQUESTS = 10
+HTTP_TIMEOUT_SECONDS = 30
 
 OUTPUT_PATH = "./output"
+
+logger = logging.getLogger(__name__)
 
 
 def save_to_dataset(dataset: str, data: list[dict]):
@@ -58,12 +63,18 @@ def clean_output_path():
             item.unlink()
 
 
-def should_retry_http(exception):
+def should_retry_http(exception: Exception) -> bool:
     """Determine if an HTTP exception should be retried"""
+    if isinstance(exception, aiohttp.ClientResponseError):
+        return exception.status == 429 or exception.status >= 500
+    if isinstance(exception, (aiohttp.ClientConnectorError, aiohttp.ClientTimeout)):
+        return True
     if isinstance(exception, aiohttp.ClientError):
-        status = exception.status
-        return status == 429 or status >= 500
-    return True
+        status = getattr(exception, "status", None)
+        if status is not None:
+            return status == 429 or status >= 500
+        return True
+    return False
 
 
 def retry_http():
@@ -76,7 +87,43 @@ def retry_http():
     )
 
 
-def http_retryable(status_code: int) -> bool:
+def http_retryable(status_code: int | None) -> bool:
     if status_code is None:
         return False
     return status_code == 429 or status_code >= 500
+
+
+def get_http_timeout() -> aiohttp.ClientTimeout:
+    """Get default HTTP timeout configuration"""
+    return aiohttp.ClientTimeout(total=HTTP_TIMEOUT_SECONDS)
+
+
+def validate_env_vars(required_vars: list[str]) -> None:
+    """Validate that required environment variables are set"""
+    from dotenv import dotenv_values
+
+    config = dotenv_values()
+    missing = [var for var in required_vars if not config.get(var, "").strip()]
+    if missing:
+        raise ValueError(
+            f"Missing required environment variables: {', '.join(missing)}"
+        )
+
+
+def get_config() -> dict[str, str | None]:
+    """Load configuration from .env file"""
+    from dotenv import dotenv_values
+    return dotenv_values()
+
+
+async def download_image(
+    session: aiohttp.ClientSession,
+    url: str,
+    file_path: str,
+    headers: dict[str, str] | None = None,
+) -> None:
+    """Download an image from URL to file path"""
+    async with session.get(url, headers=headers or {}) as response:
+        response.raise_for_status()
+        content = await response.read()
+        await asyncio.to_thread(lambda: open(file_path, "wb").write(content))

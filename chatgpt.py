@@ -2,9 +2,9 @@ import asyncio
 import os
 from base64 import b64decode
 from datetime import datetime, timezone
+from typing import Any
 
 import aiohttp
-from dotenv import dotenv_values
 from tqdm.asyncio import tqdm
 
 from img import add_prompt_to_images
@@ -12,19 +12,24 @@ from notion import is_page_exists_in_db, upload_all_images_to_notion
 from util import (
     MAX_CONCURRENT_DOWNLOADS,
     MAX_CONCURRENT_REQUESTS,
+    download_image,
+    get_config,
+    get_http_timeout,
     get_output_path,
     retry_http,
     save_to_dataset,
 )
 
-config = dotenv_values()
-
 BASE_URL = "https://chatgpt.com/backend-api"
 
 
-def get_headers():
+def get_headers() -> dict[str, str]:
+    """Get headers for ChatGPT API requests"""
+    config = get_config()
     headers = {
-        "Authorization": f"Bearer {config.get('CHATGPT_AUTHORIZATION_TOKEN', '').strip()}",
+        "Authorization": (
+            f"Bearer {config.get('CHATGPT_AUTHORIZATION_TOKEN', '').strip()}"
+        ),
         "User-Agent": config.get("CHATGPT_USER_AGENT", "").strip(),
         "Content-Type": "application/json",
     }
@@ -36,16 +41,18 @@ def get_headers():
     return headers
 
 
-headers = get_headers()
-
-
 @retry_http()
 async def get_conversations(
-    session, offset=0, limit=100, is_archived=False, is_starred=False, order="updated"
-):
+    session: aiohttp.ClientSession,
+    offset: int = 0,
+    limit: int = 100,
+    is_archived: bool = False,
+    is_starred: bool = False,
+    order: str = "updated",
+) -> dict[str, Any]:
     async with session.get(
         f"{BASE_URL}/conversations",
-        headers=headers,
+        headers=get_headers(),
         params={
             "offset": offset,
             "limit": limit,
@@ -60,10 +67,12 @@ async def get_conversations(
 
 
 @retry_http()
-async def get_conversation_details(session, conversation_id: str):
+async def get_conversation_details(
+    session: aiohttp.ClientSession, conversation_id: str
+) -> dict[str, Any]:
     async with session.get(
         f"{BASE_URL}/conversation/{conversation_id}",
-        headers=headers,
+        headers=get_headers(),
     ) as response:
         response.raise_for_status()
         data = await response.json()
@@ -71,10 +80,12 @@ async def get_conversation_details(session, conversation_id: str):
 
 
 @retry_http()
-async def delete_conversation(session, conversation_id: str):
+async def delete_conversation(
+    session: aiohttp.ClientSession, conversation_id: str
+) -> dict[str, Any]:
     async with session.patch(
         f"{BASE_URL}/conversation/{conversation_id}",
-        headers=headers,
+        headers=get_headers(),
         json={"is_visible": False},
     ) as response:
         response.raise_for_status()
@@ -83,10 +94,12 @@ async def delete_conversation(session, conversation_id: str):
 
 
 @retry_http()
-async def get_image_generations(session, limit=100):
+async def get_image_generations(
+    session: aiohttp.ClientSession, limit: int = 100
+) -> dict[str, Any]:
     async with session.get(
         f"{BASE_URL}/my/recent/image_gen",
-        headers=headers,
+        headers=get_headers(),
         params={"limit": limit},
     ) as response:
         response.raise_for_status()
@@ -94,7 +107,9 @@ async def get_image_generations(session, limit=100):
         return data
 
 
-def get_conversation_mapping_key_by_asset_pointer(data, asset_pointer):
+def get_conversation_mapping_key_by_asset_pointer(
+    data: dict[str, Any], asset_pointer: str
+) -> str | None:
     for key, node in data.get("mapping", {}).items():
         message = node.get("message")
         if not isinstance(message, dict):
@@ -111,7 +126,9 @@ def get_conversation_mapping_key_by_asset_pointer(data, asset_pointer):
     return None
 
 
-def get_prompt_from_image_node_in_conversation(data, start_node_id, asset_pointer):
+def get_prompt_from_image_node_in_conversation(
+    data: dict[str, Any], start_node_id: str, asset_pointer: str
+) -> str | None:
     mapping = data["mapping"]
     current_id = start_node_id
     if current_id not in mapping:
@@ -135,16 +152,20 @@ def get_prompt_from_image_node_in_conversation(data, start_node_id, asset_pointe
     return None
 
 
-async def fetch_image_generations(limit=100):
+async def fetch_image_generations(
+    limit: int = 100,
+) -> list[dict[str, Any]]:
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=get_http_timeout()) as session:
         data = await get_image_generations(session, limit=limit)
 
         total = len(data.get("items", []))
         pbar = tqdm(total=total, desc="Fetching generation details")
 
-        async def fetch_generation_details(img_gen):
+        async def fetch_generation_details(
+            img_gen: dict[str, Any],
+        ) -> dict[str, Any] | None:
             async with semaphore:
                 try:
                     detail = await get_conversation_details(
@@ -188,22 +209,18 @@ async def fetch_image_generations(limit=100):
         return generations
 
 
-@retry_http()
-async def download_image(session, url, file_path):
-    async with session.get(url, headers=headers) as response:
-        response.raise_for_status()
-        content = await response.read()
-        await asyncio.to_thread(lambda: open(file_path, "wb").write(content))
-
-
-async def download_all_images(generations, download_folder):
+async def download_all_images(
+    generations: list[dict[str, Any]], download_folder: str
+) -> None:
     total = len(generations)
     pbar = tqdm(total=total, desc="Downloading images")
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(
+        headers=get_headers(), timeout=get_http_timeout()
+    ) as session:
 
-        async def download(row):
+        async def download(row: dict[str, Any]):
             async with semaphore:
                 file_name = f"{row['id']}.png"
                 file_path = get_output_path(os.path.join(download_folder, file_name))
@@ -214,7 +231,9 @@ async def download_all_images(generations, download_folder):
                     return
 
                 try:
-                    await download_image(session, row["url"], file_path)
+                    await download_image(
+                        session, row["url"], file_path, headers=get_headers()
+                    )
                     pbar.write(f"✅ {file_name}")
                 except Exception as e:
                     pbar.write(f"❌ {file_name} failed: {e}")
@@ -228,16 +247,18 @@ async def download_all_images(generations, download_folder):
 
 
 async def delete_conversation_of_image_generation_uploaded_to_notion(
-    generations, db_id
-):
+    generations: list[dict[str, Any]], db_id: str
+) -> None:
     generations = list({gen["conversation_id"]: gen for gen in generations}.values())
     total = len(generations)
     pbar = tqdm(total=total, desc="Deleting conversations")
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(
+        headers=get_headers(), timeout=get_http_timeout()
+    ) as session:
 
-        async def delete(row):
+        async def delete(row: dict[str, Any]):
             async with semaphore:
                 file_name = f"{row['id']}.png"
                 conversation_id = row["conversation_id"]
@@ -264,13 +285,13 @@ async def delete_conversation_of_image_generation_uploaded_to_notion(
 
 async def upload_to_notion(
     image_folder: str,
-    db_id,
-    upload_to_notion=True,
-    remove_in_chatgpt=False,
-    add_prompt_to_image=True,
-    dataset: str = None,
-    limit=100,
-):
+    db_id: str,
+    upload_to_notion: bool = True,
+    remove_in_chatgpt: bool = False,
+    add_prompt_to_image: bool = True,
+    dataset: str | None = None,
+    limit: int = 100,
+) -> None:
     generations = await fetch_image_generations(limit=limit)
 
     if dataset:
