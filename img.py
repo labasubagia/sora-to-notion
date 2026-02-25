@@ -1,5 +1,6 @@
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
 
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
@@ -8,7 +9,9 @@ from tqdm import tqdm
 from util import MAX_RETRIES, get_output_path
 
 
-def edit_png_info(file_path, payload: dict[str, str], overwrite=True):
+def edit_png_info(
+    file_path: str, payload: dict[str, str], overwrite: bool = True
+) -> None:
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"File not found: {file_path}")
     with Image.open(file_path) as img:
@@ -22,9 +25,13 @@ def edit_png_info(file_path, payload: dict[str, str], overwrite=True):
         img.save(file_path, pnginfo=metadata)
 
 
-def add_prompt_to_images(generations, folder, max_workers=10):
-    """
-    This function adds prompt text metadata to all PNG images listed in the given dataset CSV file.
+def add_prompt_to_images(
+    generations: list[dict[str, Any]], folder: str, max_workers: int = 10
+) -> None:
+    """Add prompt text metadata to PNG images.
+
+    This function adds prompt text metadata to all PNG images listed in the
+    given dataset CSV file.
 
     How to read file result:
 
@@ -38,7 +45,7 @@ def add_prompt_to_images(generations, folder, max_workers=10):
     total = len(generations)
     pbar = tqdm(total=total, desc="Adding prompts to images")
 
-    def add_prompt(row):
+    def add_prompt(row: dict[str, Any]):
         file_name = f"{row['id']}.png"
         file_path = get_output_path(os.path.join(folder, file_name))
         if not os.path.exists(file_path):

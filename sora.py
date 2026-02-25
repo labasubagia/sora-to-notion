@@ -1,39 +1,48 @@
 import asyncio
 import os
+from typing import Any
 
 import aiohttp
-from dotenv import dotenv_values
 from tqdm.asyncio import tqdm
 
-from chatgpt import get_headers
 from img import add_prompt_to_images
 from notion import is_page_exists_in_db, upload_all_images_to_notion
 from util import (
     MAX_CONCURRENT_DOWNLOADS,
     MAX_CONCURRENT_REQUESTS,
+    download_image,
+    get_http_timeout,
     get_output_path,
     retry_http,
     save_to_dataset,
 )
 
-config = dotenv_values()
-
 BASE_URL = "https://sora.chatgpt.com/backend"
 
-headers = get_headers()
+
+def get_headers() -> dict[str, str]:
+    """Get headers for Sora API requests.
+
+    Sora uses the same authentication as ChatGPT, so we delegate to chatgpt.get_headers.
+    """
+    from chatgpt import get_headers as get_chatgpt_headers
+
+    return get_chatgpt_headers()
 
 
 @retry_http()
-async def archive_generation(session, generation_id: str, is_archived=True):
+async def archive_generation(
+    session: aiohttp.ClientSession, generation_id: str, is_archived: bool = True
+) -> dict[str, Any]:
     """
-    Trash a generation in Sora,
+    Trash a generation in Sora.
 
     is_archived=True means trash, is_archived=False means untrash/restore
     """
     async with session.post(
         f"{BASE_URL}/generations/{generation_id}",
         json={"is_archived": is_archived},
-        headers=headers,
+        headers=get_headers(),
     ) as response:
         response.raise_for_status()
         json_data = await response.json()
@@ -41,12 +50,14 @@ async def archive_generation(session, generation_id: str, is_archived=True):
 
 
 @retry_http()
-async def archive_task(session, task_id: str):
+async def archive_task(
+    session: aiohttp.ClientSession, task_id: str
+) -> dict[str, Any]:
     """
     Trash a task in Sora
     """
     async with session.post(
-        f"{BASE_URL}/video_gen/{task_id}/archive", headers=headers
+        f"{BASE_URL}/video_gen/{task_id}/archive", headers=get_headers()
     ) as response:
         response.raise_for_status()
         json_data = await response.json()
@@ -54,9 +65,11 @@ async def archive_task(session, task_id: str):
 
 
 @retry_http()
-async def delete_task(session, task_id: str):
+async def delete_task(
+    session: aiohttp.ClientSession, task_id: str
+) -> dict[str, Any]:
     async with session.delete(
-        f"{BASE_URL}/video_gen/{task_id}", headers=headers
+        f"{BASE_URL}/video_gen/{task_id}", headers=get_headers()
     ) as response:
         response.raise_for_status()
         json_data = await response.json()
@@ -65,8 +78,11 @@ async def delete_task(session, task_id: str):
 
 @retry_http()
 async def fetch_recent_tasks(
-    session, limit=100, before_task_id: str = None, archived=False
-):
+    session: aiohttp.ClientSession,
+    limit: int = 100,
+    before_task_id: str | None = None,
+    archived: bool = False,
+) -> dict[str, Any]:
     params = {"limit": limit}
     if before_task_id:
         params["before"] = before_task_id
@@ -74,7 +90,7 @@ async def fetch_recent_tasks(
         params["archived"] = "true"
 
     async with session.get(
-        f"{BASE_URL}/v2/recent_tasks", params=params, headers=headers
+        f"{BASE_URL}/v2/recent_tasks", params=params, headers=get_headers()
     ) as response:
         response.raise_for_status()
         data_json = await response.json()
@@ -83,11 +99,11 @@ async def fetch_recent_tasks(
 
 @retry_http()
 async def fetch_list_tasks(
-    session,
-    limit=20,
-    after_task_id=None,
-    archived=False,  # this is trash in sora
-):
+    session: aiohttp.ClientSession,
+    limit: int = 20,
+    after_task_id: str | None = None,
+    archived: bool = False,
+) -> dict[str, Any]:
     params = {"limit": limit}
     if archived:
         params["archived"] = "true"
@@ -95,7 +111,7 @@ async def fetch_list_tasks(
         params["after"] = after_task_id
 
     async with session.get(
-        f"{BASE_URL}/v2/list_tasks", params=params, headers=headers
+        f"{BASE_URL}/v2/list_tasks", params=params, headers=get_headers()
     ) as response:
         response.raise_for_status()
         json_data = await response.json()
@@ -103,15 +119,17 @@ async def fetch_list_tasks(
 
 
 async def fetch_all_lists_tasks(
-    limit=20,
-    archived=False,  # this is trash in sora
-):
+    limit: int = 20,
+    archived: bool = False,
+) -> list[dict[str, Any]]:
     batch_count = 1
-    all_tasks = []
+    all_tasks: list[dict[str, Any]] = []
     has_more = True
-    last_id = None
+    last_id: str | None = None
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(
+        headers=get_headers(), timeout=get_http_timeout()
+    ) as session:
         while has_more:
             try:
                 data = await fetch_list_tasks(
@@ -125,7 +143,8 @@ async def fetch_all_lists_tasks(
                 tasks = data.get("task_responses", [])
                 all_tasks.extend(tasks)
                 print(
-                    f"Batch {batch_count} fetched, last_id {last_id}, has_more: {has_more}"
+                    f"Batch {batch_count} fetched, "
+                    f"last_id {last_id}, has_more: {has_more}"
                 )
                 batch_count += 1
             except Exception as e:
@@ -135,8 +154,8 @@ async def fetch_all_lists_tasks(
     return all_tasks
 
 
-async def delete_empty_tasks():
-    empty_tasks = []
+async def delete_empty_tasks() -> None:
+    empty_tasks: list[str] = []
     tasks = await fetch_all_lists_tasks(limit=100, archived=False)
     for task in tasks:
         if len(task.get("generations", [])) == 0:
@@ -147,9 +166,11 @@ async def delete_empty_tasks():
     pbar = tqdm(total=total, desc="Deleting empty tasks")
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-    async with aiohttp.ClientSession(headers=headers) as session:
+    async with aiohttp.ClientSession(
+        headers=get_headers(), timeout=get_http_timeout()
+    ) as session:
 
-        async def delete(task_id):
+        async def delete(task_id: str):
             async with semaphore:
                 try:
                     await archive_task(session, task_id)
@@ -168,8 +189,10 @@ async def delete_empty_tasks():
     print()
 
 
-def get_generations_from_tasks(tasks):
-    generations = []
+def get_generations_from_tasks(
+    tasks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    generations: list[dict[str, Any]] = []
     for task in tasks:
         for generation in task.get("generations", []):
             generations.append(
@@ -186,39 +209,28 @@ def get_generations_from_tasks(tasks):
 
 
 @retry_http()
-async def download_image(session, url, file_path):
-    async with session.get(url, headers={}) as response:
-        response.raise_for_status()
-        content = await response.read()
-        await asyncio.to_thread(lambda: open(file_path, "wb").write(content))
-
-
-@retry_http()
-async def get_generation_download_url(session, generation_id):
+async def get_generation_download_url(
+    session: aiohttp.ClientSession, generation_id: str
+) -> str | None:
     async with session.get(
-        f"{BASE_URL}/generations/{generation_id}/download", headers=headers
+        f"{BASE_URL}/generations/{generation_id}/download",
+        headers=get_headers(),
     ) as response:
         response.raise_for_status()
         json_data = await response.json()
         return json_data.get("url", None)
 
 
-@retry_http()
-async def download_generation_image(session, download_folder, generation_id):
-    url = await get_generation_download_url(session, generation_id)
-    file_name = f"{generation_id}.png"
-    file_path = get_output_path(os.path.join(download_folder, file_name))
-    await download_image(session, url, file_path)
-
-
-async def download_all_images(generations, download_folder="sora_images"):
+async def download_all_images(
+    generations: list[dict[str, Any]], download_folder: str = "sora_images"
+) -> None:
     total = len(generations)
     pbar = tqdm(total=total, desc="Downloading images")
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=get_http_timeout()) as session:
 
-        async def download(generation):
+        async def download(generation: dict[str, Any]):
             async with semaphore:
                 generation_id = generation["id"]
                 url = generation["url"]
@@ -245,23 +257,27 @@ async def download_all_images(generations, download_folder="sora_images"):
 
 
 @retry_http()
-async def delete_generation(session, id: str):
+async def delete_generation(
+    session: aiohttp.ClientSession, id: str
+) -> dict[str, Any]:
     async with session.delete(
-        f"{BASE_URL}/generations/{id}", headers=headers
+        f"{BASE_URL}/generations/{id}", headers=get_headers()
     ) as response:
         response.raise_for_status()
         json_data = await response.json()
         return json_data
 
 
-async def delete_generations(generations):
+async def delete_generations(generations: list[dict[str, Any]]) -> None:
     total = len(generations)
     pbar = tqdm(total=total, desc="Deleting generations")
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(
+        headers=get_headers(), timeout=get_http_timeout()
+    ) as session:
 
-        async def delete(generation):
+        async def delete(generation: dict[str, Any]):
             async with semaphore:
                 generation_id = generation.get("id")
                 try:
@@ -279,16 +295,16 @@ async def delete_generations(generations):
 
 
 async def delete_generations_already_uploaded_to_notion(
-    generations,
-    db_id,
-):
+    generations: list[dict[str, Any]],
+    db_id: str,
+) -> None:
     total = len(generations)
     pbar = tqdm(total=total, desc="Deleting uploaded generations")
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=get_http_timeout()) as session:
 
-        async def delete(generation):
+        async def delete(generation: dict[str, Any]):
             async with semaphore:
                 generation_id = generation.get("id")
                 file_name = f"{generation_id}.png"
@@ -313,16 +329,16 @@ async def delete_generations_already_uploaded_to_notion(
 
 
 async def trash_generations_already_uploaded_to_notion(
-    generations,
-    db_id,
-):
+    generations: list[dict[str, Any]],
+    db_id: str,
+) -> None:
     total = len(generations)
     pbar = tqdm(total=total, desc="Trashing uploaded generations")
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=get_http_timeout()) as session:
 
-        async def trash(generation):
+        async def trash(generation: dict[str, Any]):
             async with semaphore:
                 generation_id = generation.get("id")
                 file_name = f"{generation_id}.png"
@@ -349,17 +365,17 @@ async def trash_generations_already_uploaded_to_notion(
 async def upload_to_notion(
     image_folder: str,
     db_id: str,
-    upload_to_notion=True,
-    trash_in_sora=False,
-    remove_in_sora=False,
-    add_prompt_to_image=True,
-    limit=100,
-    dataset: str = None,  # save to dataset if provided
-):
+    upload_to_notion: bool = True,
+    trash_in_sora: bool = False,
+    remove_in_sora: bool = False,
+    add_prompt_to_image: bool = True,
+    limit: int = 100,
+    dataset: str | None = None,
+) -> None:
     if trash_in_sora and remove_in_sora:
         raise ValueError("trash_in_sora and remove_in_sora cannot be both True.")
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=get_http_timeout()) as session:
         data = await fetch_recent_tasks(session, limit=limit, archived=False)
 
     tasks = data.get("task_responses", [])
@@ -390,9 +406,9 @@ async def upload_to_notion(
 
 
 async def cleanup_trash(
-    task_limit=100,
-    dataset: str = None,  # save to dataset if provided
-):
+    task_limit: int = 100,
+    dataset: str | None = None,
+) -> None:
     tasks = await fetch_all_lists_tasks(limit=task_limit, archived=True)
     generations = get_generations_from_tasks(tasks)
 
@@ -402,5 +418,5 @@ async def cleanup_trash(
     await delete_generations(generations=generations)
 
 
-async def cleanup_tasks():
+async def cleanup_tasks() -> None:
     await delete_empty_tasks()
