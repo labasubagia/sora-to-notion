@@ -24,7 +24,7 @@ _db_data_sources_cache: dict[str, Any] = {}
 _db_page_cache: set[str] = set()
 
 
-def get_notion_headers() -> dict[str, str]:
+def get_headers() -> dict[str, str]:
     """Get headers for Notion API requests"""
     config = get_config()
     return {
@@ -42,7 +42,7 @@ async def get_db_data_sources(
         return _db_data_sources_cache[db_id]
 
     async with session.get(
-        f"{BASE_URL}/v1/databases/{db_id}", headers=get_notion_headers()
+        f"{BASE_URL}/v1/databases/{db_id}", headers=get_headers()
     ) as response:
         response.raise_for_status()
         data = await response.json()
@@ -57,7 +57,7 @@ async def query_data_source(
 ) -> dict[str, Any]:
     async with session.post(
         f"{BASE_URL}/v1/data_sources/{data_source_id}/query",
-        headers=get_notion_headers(),
+        headers=get_headers(),
         json={
             "filter": {"and": [{"property": "Name", "rich_text": {"equals": query}}]}
         },
@@ -94,7 +94,7 @@ async def create_upload_img(
 
     async with session.post(
         f"{BASE_URL}/v1/file_uploads",
-        headers=get_notion_headers(),
+        headers=get_headers(),
         json={
             "mode": "single_part",
             "filename": file_name,
@@ -119,8 +119,8 @@ async def send_upload_img(
         async with session.post(
             f"{BASE_URL}/v1/file_uploads/{file_upload_id}/send",
             headers={
-                "Authorization": get_notion_headers()["Authorization"],
-                "Notion-Version": get_notion_headers()["Notion-Version"],
+                "Authorization": get_headers()["Authorization"],
+                "Notion-Version": get_headers()["Notion-Version"],
             },
             data=data,
         ) as response:
@@ -146,7 +146,7 @@ async def add_page_to_db(
 
     async with session.post(
         f"{BASE_URL}/v1/pages",
-        headers=get_notion_headers(),
+        headers=get_headers(),
         json={
             "parent": {"database_id": db_id},
             "properties": {
