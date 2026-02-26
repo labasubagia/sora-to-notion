@@ -3,7 +3,6 @@ Integration tests for chatgpt.py using pure mocking.
 
 No real API calls are made. All external dependencies are mocked.
 """
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -20,7 +19,6 @@ from chatgpt import (
     get_image_generations,
     get_prompt_from_image_node_in_conversation,
     get_conversation_mapping_key_by_asset_pointer,
-    upload_to_notion,
 )
 
 

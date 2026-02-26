@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from tests.conftest import make_mock_response
-import notion
 
 from notion import (
     _db_data_sources_cache,

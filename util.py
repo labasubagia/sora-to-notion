@@ -67,7 +67,7 @@ def should_retry_http(exception: Exception) -> bool:
     """Determine if an HTTP exception should be retried"""
     if isinstance(exception, aiohttp.ClientResponseError):
         return exception.status == 429 or exception.status >= 500
-    if isinstance(exception, (aiohttp.ClientConnectorError, aiohttp.ClientTimeout)):
+    if isinstance(exception, aiohttp.ClientConnectorError | aiohttp.ClientTimeout):
         return True
     if isinstance(exception, aiohttp.ClientError):
         status = getattr(exception, "status", None)
