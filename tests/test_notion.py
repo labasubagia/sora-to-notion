@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from tests.conftest import make_mock_response
+
 from notion import (
     _db_data_sources_cache,
     _db_page_cache,
@@ -18,6 +19,7 @@ from notion import (
     is_page_exists_in_db,
     query_data_source,
     send_upload_img,
+    upload_all_images_to_notion,
 )
 
 
@@ -211,3 +213,69 @@ class TestNotionCaching:
         """Caches should be cleared by reset_caches fixture."""
         assert len(_db_data_sources_cache) == 0
         assert len(_db_page_cache) == 0
+
+
+@pytest.mark.integration
+class TestNotionUploadAllImages:
+    """Tests for upload_all_images_to_notion function."""
+
+    async def test_upload_all_images_success(self, monkeypatch, tmp_path):
+        """Should upload all images to Notion."""
+        from unittest.mock import patch, AsyncMock
+        
+        # Use relative path within tmp_path
+        monkeypatch.setattr("util.OUTPUT_PATH", str(tmp_path))
+        image_folder = "images"
+        
+        # Create test image files
+        images_dir = tmp_path / image_folder
+        images_dir.mkdir()
+        (images_dir / "img_123.png").write_bytes(b"fake png")
+        (images_dir / "img_456.png").write_bytes(b"fake png")
+        
+        generations = [
+            {"id": "img_123", "prompt": "Test prompt 1"},
+            {"id": "img_456", "prompt": "Test prompt 2"},
+        ]
+        
+        with patch("notion.is_page_exists_in_db", new_callable=AsyncMock) as mock_exists:
+            mock_exists.return_value = False
+            
+            with patch("notion.add_page_to_db", new_callable=AsyncMock) as mock_add:
+                mock_add.return_value = {"id": "page_123"}
+                
+                await upload_all_images_to_notion(
+                    generations=generations,
+                    db_id="test_db",
+                    image_folder=image_folder,
+                )
+                
+                assert mock_exists.call_count == 2
+                assert mock_add.call_count == 2
+
+    async def test_upload_all_images_skip_existing(self, monkeypatch, tmp_path):
+        """Should skip images that already exist in Notion."""
+        from unittest.mock import patch, AsyncMock
+        
+        monkeypatch.setattr("util.OUTPUT_PATH", str(tmp_path))
+        image_folder = "images"
+        
+        # Create test image file
+        images_dir = tmp_path / image_folder
+        images_dir.mkdir()
+        (images_dir / "img_123.png").write_bytes(b"fake png")
+        
+        generations = [{"id": "img_123", "prompt": "Test prompt"}]
+        
+        with patch("notion.is_page_exists_in_db", new_callable=AsyncMock) as mock_exists:
+            mock_exists.return_value = True
+            
+            with patch("notion.add_page_to_db", new_callable=AsyncMock) as mock_add:
+                await upload_all_images_to_notion(
+                    generations=generations,
+                    db_id="test_db",
+                    image_folder=image_folder,
+                )
+                
+                mock_exists.assert_called_once()
+                mock_add.assert_not_called()

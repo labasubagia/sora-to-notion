@@ -1,15 +1,12 @@
 """
 Unit tests for util.py - pure functions, no external dependencies.
 """
-import os
-from pathlib import Path
 from unittest.mock import patch
 
 import aiohttp
 import pytest
 
 from util import (
-    MAX_RETRIES,
     clean_output_path,
     get_http_timeout,
     get_output_path,

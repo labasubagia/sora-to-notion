@@ -17,7 +17,7 @@ def edit_png_info(
     with Image.open(file_path) as img:
         metadata = PngInfo()
         for key, value in img.info.items():
-            if isinstance(value, (str, int)):
+            if isinstance(value, str | int):
                 metadata.add_text(key, str(value))
         for key, value in payload.items():
             if overwrite or key not in img.info:

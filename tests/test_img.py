@@ -1,13 +1,10 @@
 """
 Unit tests for img.py - image processing functions.
 """
-import os
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from PIL import Image
-from PIL.PngImagePlugin import PngInfo
 
 from img import add_prompt_to_images, edit_png_info
 from util import MAX_RETRIES

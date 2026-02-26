@@ -1,10 +1,8 @@
 """
 Pytest configuration and shared fixtures for Sora CLI tests.
 """
-import os
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
