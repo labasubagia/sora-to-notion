@@ -53,16 +53,15 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
-      - name: Run unit tests
-        run: uv run pytest tests/ -m "not integration and not smoke" --cov=. --cov-report=xml --cov-report=term-missing
+      - name: Run unit tests with coverage
+        run: uv run pytest tests/ -m "not integration and not smoke" --cov=. --cov-report=html --cov-report=term-missing
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
         with:
-          files: ./coverage.xml
-          fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          name: coverage-report
+          path: htmlcov/
+          retention-days: 7
 
   test-integration:
     name: Integration Tests

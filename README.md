@@ -257,11 +257,12 @@ tests/
 GitHub Actions runs on every push and pull request:
 
 - **Lint**: `ruff check .`
-- **Unit Tests**: pytest with coverage
+- **Unit Tests**: pytest with HTML coverage report
 - **Integration Tests**: Mocked API tests
 - **Build**: Package build verification
 
-Coverage reports are uploaded to Codecov (requires `CODECOV_TOKEN` secret).
+Coverage reports are uploaded as GitHub artifacts (available for 7 days).
+Download `coverage-report.zip` from the workflow run and open `htmlcov/index.html` in your browser.
 
 ## Troubleshooting
 
