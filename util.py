@@ -66,13 +66,13 @@ def clean_output_path():
 def should_retry_http(exception: Exception) -> bool:
     """Determine if an HTTP exception should be retried"""
     if isinstance(exception, aiohttp.ClientResponseError):
-        return exception.status == 429 or exception.status >= 500
+        return http_retryable(exception.status)
     if isinstance(exception, aiohttp.ClientConnectorError | aiohttp.ClientTimeout):
         return True
     if isinstance(exception, aiohttp.ClientError):
         status = getattr(exception, "status", None)
         if status is not None:
-            return status == 429 or status >= 500
+            return http_retryable(status)
         return True
     return False
 
