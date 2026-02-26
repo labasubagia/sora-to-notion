@@ -210,6 +210,59 @@ Default concurrency settings:
 
 Adjust these in `util.py` if needed.
 
+## Testing
+
+This project uses pytest for testing with a pure mocking approach (no real API calls in CI).
+
+### Run Tests
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run unit tests only (faster, no integration tests)
+uv run pytest -m "not integration"
+
+# Run with coverage report
+uv run pytest --cov=. --cov-report=html --cov-report=term-missing
+
+# Run specific test file
+uv run pytest tests/test_util.py -v
+
+# Run specific test function
+uv run pytest tests/test_util.py::TestGetOutputPath::test_relative_path_allowed -v
+```
+
+### Test Structure
+
+```
+tests/
+├── conftest.py          # Shared fixtures and mock helpers
+├── test_util.py         # Unit tests for utility functions (26 tests)
+├── test_img.py          # Unit tests for image processing (9 tests)
+├── test_notion.py       # Integration tests with mocking (11 tests)
+├── test_chatgpt.py      # Integration tests with mocking (10 tests)
+├── test_sora.py         # Integration tests with mocking (11 tests)
+└── test_main.py         # CLI command tests (15 tests)
+```
+
+### Test Markers
+
+- `@pytest.mark.integration` - Integration tests using mocked API responses
+- `@pytest.mark.smoke` - Tests that require real API access (skip in CI)
+- `@pytest.mark.slow` - Slow-running tests
+
+### CI/CD
+
+GitHub Actions runs on every push and pull request:
+
+- **Lint**: `ruff check .`
+- **Unit Tests**: pytest with coverage
+- **Integration Tests**: Mocked API tests
+- **Build**: Package build verification
+
+Coverage reports are uploaded to Codecov (requires `CODECOV_TOKEN` secret).
+
 ## Troubleshooting
 
 ### "Missing required environment variables"
@@ -237,7 +290,20 @@ MIT
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch
+2. Create a feature branch: `git checkout -b feature/my-feature`
 3. Make your changes
-4. Run tests and linting: `uv run ruff check .`
-5. Submit a pull request
+4. Run tests and linting:
+   ```bash
+   uv run pytest -m "not integration"  # Run unit tests
+   uv run ruff check .                 # Run linter
+   ```
+5. Commit your changes: `git commit -m "Add my feature"`
+6. Push to the branch: `git push origin feature/my-feature`
+7. Submit a pull request
+
+### Testing Requirements
+
+- All new features should include unit tests
+- API interactions should be mocked in tests
+- Maintain >80% code coverage
+- All tests must pass before merging
