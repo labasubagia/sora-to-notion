@@ -41,12 +41,17 @@ class TestChatGPTHeaders:
         assert "Content-Type" in headers
         assert headers["Content-Type"] == "application/json"
 
-    def test_headers_decode_cookie(self, mock_env_vars):
+    def test_headers_decode_cookie(self, monkeypatch):
         """Should decode base64 cookie."""
+        # Set up test env vars directly to ensure isolation
+        monkeypatch.setenv("CHATGPT_COOKIE_STRING_BASE64", "dGVzdF9jb29raWU=")
+        monkeypatch.setenv("CHATGPT_AUTHORIZATION_TOKEN", "test_token")
+        monkeypatch.setenv("CHATGPT_USER_AGENT", "TestAgent/1.0")
+        
         headers = get_headers()
         # dGVzdF9jb29raWU= decodes to "test_cookie"
-        # Just verify Cookie header exists since real env may override
         assert "Cookie" in headers
+        assert headers["Cookie"] == "test_cookie"
 
 
 @pytest.mark.integration
