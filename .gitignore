@@ -20,4 +20,4 @@ coverage.xml
 htmlcov/
 *.egg
 tests/.env
-tests/cassettes/*.yaml.new
+tests/cassettes/*.yaml.newdist/
