@@ -15,6 +15,7 @@ from sora import (
     archive_task,
     cleanup_tasks,
     cleanup_trash,
+    delete_empty_tasks,
     delete_generation,
     delete_generations,
     delete_generations_already_uploaded_to_notion,
@@ -606,3 +607,81 @@ class TestSoraCleanup:
                         
                         mock_fetch.assert_called_once()
                         mock_save.assert_called_once()
+
+
+@pytest.mark.integration
+class TestSoraDeleteEmptyTasks:
+    """Tests for delete_empty_tasks function."""
+
+    async def test_delete_empty_tasks_success(self, monkeypatch, capsys):
+        """Should delete tasks with no generations."""
+        from unittest.mock import patch, AsyncMock
+        
+        with patch("sora.fetch_all_lists_tasks", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = [
+                {"id": "task_1", "generations": []},
+                {"id": "task_2", "generations": []},
+            ]
+            
+            with patch("sora.archive_task", new_callable=AsyncMock) as mock_archive:
+                with patch("sora.delete_task", new_callable=AsyncMock) as mock_delete:
+                    await delete_empty_tasks()
+                    
+                    mock_fetch.assert_called_once()
+                    assert mock_archive.call_count == 2
+                    assert mock_delete.call_count == 2
+                    captured = capsys.readouterr()
+                    assert "Deleting empty tasks" in captured.err or "✅" in captured.out
+
+    async def test_delete_empty_tasks_skip_non_empty(self, monkeypatch, capsys):
+        """Should skip tasks that have generations."""
+        from unittest.mock import patch, AsyncMock
+        
+        with patch("sora.fetch_all_lists_tasks", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = [
+                {"id": "task_1", "generations": [{"id": "gen_1"}]},
+                {"id": "task_2", "generations": []},
+            ]
+            
+            with patch("sora.archive_task", new_callable=AsyncMock) as mock_archive:
+                with patch("sora.delete_task", new_callable=AsyncMock) as mock_delete:
+                    await delete_empty_tasks()
+                    
+                    # Only task_2 should be deleted
+                    assert mock_archive.call_count == 1
+                    assert mock_delete.call_count == 1
+
+    async def test_delete_empty_tasks_no_empty_tasks(self, monkeypatch, capsys):
+        """Should handle case with no empty tasks."""
+        from unittest.mock import patch, AsyncMock
+        
+        with patch("sora.fetch_all_lists_tasks", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = [
+                {"id": "task_1", "generations": [{"id": "gen_1"}]},
+                {"id": "task_2", "generations": [{"id": "gen_2"}]},
+            ]
+            
+            with patch("sora.archive_task", new_callable=AsyncMock) as mock_archive:
+                with patch("sora.delete_task", new_callable=AsyncMock) as mock_delete:
+                    await delete_empty_tasks()
+                    
+                    assert mock_archive.call_count == 0
+                    assert mock_delete.call_count == 0
+
+    async def test_delete_empty_tasks_error_handling(self, monkeypatch, capsys):
+        """Should handle errors during deletion gracefully."""
+        from unittest.mock import patch, AsyncMock
+        
+        with patch("sora.fetch_all_lists_tasks", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = [
+                {"id": "task_1", "generations": []},
+            ]
+            
+            with patch("sora.archive_task", new_callable=AsyncMock) as mock_archive:
+                with patch("sora.delete_task", new_callable=AsyncMock) as mock_delete:
+                    mock_delete.side_effect = Exception("Delete failed")
+                    
+                    await delete_empty_tasks()
+                    
+                    captured = capsys.readouterr()
+                    assert "failed" in captured.out
