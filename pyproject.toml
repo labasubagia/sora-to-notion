@@ -16,6 +16,16 @@ dependencies = [
     "typer>=0.21.1",
 ]
 
+[project.scripts]
+sora = "main:app"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["main", "sora", "chatgpt", "notion", "img", "util"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
