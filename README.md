@@ -292,15 +292,37 @@ MIT
 
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Make your changes
-4. Run tests and linting:
+3. Set up pre-commit hooks:
+   ```bash
+   uv run pre-commit install
+   ```
+4. Make your changes
+5. Run tests and linting:
    ```bash
    uv run pytest -m "not integration"  # Run unit tests
    uv run ruff check .                 # Run linter
    ```
-5. Commit your changes: `git commit -m "Add my feature"`
-6. Push to the branch: `git push origin feature/my-feature`
-7. Submit a pull request
+6. Commit your changes: `git commit -m "Add my feature"`
+7. Push to the branch: `git push origin feature/my-feature`
+8. Submit a pull request
+
+### Pre-commit Hooks
+
+This project uses [pre-commit](https://pre-commit.com/) with [ruff](https://github.com/astral-sh/ruff-pre-commit) for automatic code formatting and linting on commit.
+
+Install the hooks:
+```bash
+uv run pre-commit install
+```
+
+The hooks will automatically run on every commit:
+- **Format**: `ruff format .`
+- **Lint**: `ruff check --extend-select I --fix .`
+
+Run manually on all files:
+```bash
+uv run pre-commit run --all-files
+```
 
 ### Testing Requirements
 
