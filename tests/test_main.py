@@ -1,6 +1,7 @@
 """
 CLI tests for main.py using Typer's test utilities.
 """
+import re
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -9,6 +10,12 @@ from typer.testing import CliRunner
 from main import app
 
 runner = CliRunner()
+
+
+def strip_ansi(text: str) -> str:
+    """Remove ANSI escape codes from text."""
+    ansi_escape = re.compile(r'\x1b\[[0-9;]*[a-zA-Z]')
+    return ansi_escape.sub('', text)
 
 
 class TestCLIHelp:
@@ -28,16 +35,18 @@ class TestCLIHelp:
         """Should show sora-upload-to-notion help."""
         result = runner.invoke(app, ["sora-upload-to-notion", "--help"])
         assert result.exit_code == 0
-        assert "--image-folder" in result.stdout
-        assert "--db-id" in result.stdout
-        assert "--trash-in-sora" in result.stdout
+        clean_output = strip_ansi(result.stdout)
+        assert "--image-folder" in clean_output
+        assert "--db-id" in clean_output
+        assert "--trash-in-sora" in clean_output
 
     def test_chatgpt_upload_help(self):
         """Should show chatgpt-upload-to-notion help."""
         result = runner.invoke(app, ["chatgpt-upload-to-notion", "--help"])
         assert result.exit_code == 0
-        assert "--image-folder" in result.stdout
-        assert "--limit" in result.stdout
+        clean_output = strip_ansi(result.stdout)
+        assert "--image-folder" in clean_output
+        assert "--limit" in clean_output
 
 
 class TestCLIValidation:
@@ -70,6 +79,8 @@ class TestCLICommands:
     def setup(self, mock_env_vars, tmp_output_dir, monkeypatch):
         """Setup test environment."""
         monkeypatch.setattr("util.OUTPUT_PATH", str(tmp_output_dir))
+        # Mock env var validation to pass in tests
+        monkeypatch.setattr("util.validate_env_vars", lambda x: None)
         yield
 
     @patch("sora.upload_to_notion", new_callable=AsyncMock)
