@@ -12,3 +12,12 @@ wheels/
 .env
 
 output/*
+
+# Testing
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg
+tests/.env
+tests/cassettes/*.yaml.newdist/

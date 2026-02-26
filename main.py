@@ -26,9 +26,7 @@ def sora_upload_to_notion(
     ] = "sora_images",
     db_id: Annotated[
         str,
-        typer.Option(
-            help="Notion Database ID", callback=validate_db_id
-        ),
+        typer.Option(help="Notion Database ID", callback=validate_db_id),
     ] = NOTION_DB_ID,
     upload_to_notion: Annotated[
         bool, typer.Option(help="Whether to upload to Notion")
@@ -44,12 +42,14 @@ def sora_upload_to_notion(
     ] = f"sora_{datetime.now().isoformat()}.csv",
 ):
     """Upload Sora generations to Notion"""
-    util.validate_env_vars([
-        "NOTION_API_KEY",
-        "NOTION_DATABASE_ID",
-        "CHATGPT_AUTHORIZATION_TOKEN",
-        "CHATGPT_USER_AGENT",
-    ])
+    util.validate_env_vars(
+        [
+            "NOTION_API_KEY",
+            "NOTION_DATABASE_ID",
+            "CHATGPT_AUTHORIZATION_TOKEN",
+            "CHATGPT_USER_AGENT",
+        ]
+    )
     asyncio.run(
         sora.upload_to_notion(
             image_folder,
@@ -69,20 +69,24 @@ def sora_cleanup_trash(
     ] = f"sora_trash_{datetime.now().isoformat()}.csv",
 ):
     """Clean up trashed Sora generations"""
-    util.validate_env_vars([
-        "CHATGPT_AUTHORIZATION_TOKEN",
-        "CHATGPT_USER_AGENT",
-    ])
+    util.validate_env_vars(
+        [
+            "CHATGPT_AUTHORIZATION_TOKEN",
+            "CHATGPT_USER_AGENT",
+        ]
+    )
     asyncio.run(sora.cleanup_trash(dataset=dataset))
 
 
 @app.command()
 def sora_cleanup_tasks():
     """Clean up empty Sora tasks"""
-    util.validate_env_vars([
-        "CHATGPT_AUTHORIZATION_TOKEN",
-        "CHATGPT_USER_AGENT",
-    ])
+    util.validate_env_vars(
+        [
+            "CHATGPT_AUTHORIZATION_TOKEN",
+            "CHATGPT_USER_AGENT",
+        ]
+    )
     asyncio.run(sora.cleanup_tasks())
 
 
@@ -93,9 +97,7 @@ def chatgpt_upload_to_notion(
     ] = "chatgpt_images",
     db_id: Annotated[
         str,
-        typer.Option(
-            help="Notion Database ID", callback=validate_db_id
-        ),
+        typer.Option(help="Notion Database ID", callback=validate_db_id),
     ] = NOTION_DB_ID,
     upload_to_notion: Annotated[
         bool, typer.Option(help="Whether to upload to Notion")
@@ -111,13 +113,15 @@ def chatgpt_upload_to_notion(
     ] = 100,
 ):
     """Upload ChatGPT image generations to Notion"""
-    util.validate_env_vars([
-        "NOTION_API_KEY",
-        "NOTION_DATABASE_ID",
-        "CHATGPT_AUTHORIZATION_TOKEN",
-        "CHATGPT_USER_AGENT",
-        "CHATGPT_COOKIE_STRING_BASE64",
-    ])
+    util.validate_env_vars(
+        [
+            "NOTION_API_KEY",
+            "NOTION_DATABASE_ID",
+            "CHATGPT_AUTHORIZATION_TOKEN",
+            "CHATGPT_USER_AGENT",
+            "CHATGPT_COOKIE_STRING_BASE64",
+        ]
+    )
     asyncio.run(
         chatgpt.upload_to_notion(
             image_folder=image_folder,

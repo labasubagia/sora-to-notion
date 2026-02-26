@@ -113,6 +113,7 @@ def validate_env_vars(required_vars: list[str]) -> None:
 def get_config() -> dict[str, str | None]:
     """Load configuration from .env file"""
     from dotenv import dotenv_values
+
     return dotenv_values()
 
 
