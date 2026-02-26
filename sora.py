@@ -50,9 +50,7 @@ async def archive_generation(
 
 
 @retry_http()
-async def archive_task(
-    session: aiohttp.ClientSession, task_id: str
-) -> dict[str, Any]:
+async def archive_task(session: aiohttp.ClientSession, task_id: str) -> dict[str, Any]:
     """
     Trash a task in Sora
     """
@@ -65,9 +63,7 @@ async def archive_task(
 
 
 @retry_http()
-async def delete_task(
-    session: aiohttp.ClientSession, task_id: str
-) -> dict[str, Any]:
+async def delete_task(session: aiohttp.ClientSession, task_id: str) -> dict[str, Any]:
     async with session.delete(
         f"{BASE_URL}/video_gen/{task_id}", headers=get_headers()
     ) as response:
@@ -257,9 +253,7 @@ async def download_all_images(
 
 
 @retry_http()
-async def delete_generation(
-    session: aiohttp.ClientSession, id: str
-) -> dict[str, Any]:
+async def delete_generation(session: aiohttp.ClientSession, id: str) -> dict[str, Any]:
     async with session.delete(
         f"{BASE_URL}/generations/{id}", headers=get_headers()
     ) as response:
