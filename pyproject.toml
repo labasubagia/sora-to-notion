@@ -28,6 +28,7 @@ py-modules = ["main", "sora", "chatgpt", "notion", "img", "util"]
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.5.1",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=4.1.0",
