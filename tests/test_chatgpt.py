@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from tests.conftest import make_mock_response
+import chatgpt
 
 from chatgpt import (
     delete_conversation,
@@ -59,6 +60,131 @@ class TestChatGPTHeaders:
         assert "Authorization" in headers
         assert "User-Agent" in headers
         assert "Content-Type" in headers
+
+
+@pytest.mark.integration
+class TestChatGPTFetchImageGenerations:
+    """Tests for fetch_image_generations function."""
+
+    async def test_fetch_image_generations_success(self, mock_aiohttp_session, monkeypatch):
+        """Should fetch and process image generations."""
+        from unittest.mock import patch, AsyncMock
+        
+        # Mock get_image_generations response
+        mock_data = {
+            "items": [
+                {
+                    "id": "img_123",
+                    "conversation_id": "conv_abc",
+                    "message_id": "msg_def",
+                    "asset_pointer": "asset_ghi",
+                    "url": "https://example.com/image.png",
+                    "created_at": 1705315800,
+                }
+            ]
+        }
+        
+        with patch("chatgpt.get_image_generations", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = mock_data
+            
+            with patch("chatgpt.get_conversation_details", new_callable=AsyncMock) as mock_detail:
+                mock_detail.return_value = {
+                    "mapping": {
+                        "node1": {
+                            "message": {
+                                "author": {"role": "user"},
+                                "content": {"parts": ["Test prompt"]},
+                            },
+                            "parent": None,
+                        }
+                    }
+                }
+                
+                with patch("chatgpt.get_prompt_from_image_node_in_conversation") as mock_prompt:
+                    mock_prompt.return_value = "Test prompt"
+                    
+                    result = await chatgpt.fetch_image_generations(limit=5)
+                    
+                    assert isinstance(result, list)
+                    assert len(result) == 1
+                    assert result[0]["id"] == "img_123"
+                    assert result[0]["prompt"] == "Test prompt"
+
+    async def test_fetch_image_generations_empty(self, mock_aiohttp_session, monkeypatch):
+        """Should return empty list when no generations."""
+        from unittest.mock import patch, AsyncMock
+        
+        with patch("chatgpt.get_image_generations", new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = {"items": []}
+            
+            result = await chatgpt.fetch_image_generations(limit=5)
+            
+            assert result == []
+
+
+@pytest.mark.integration
+class TestChatGPTUploadToNotion:
+    """Tests for upload_to_notion function."""
+
+    async def test_upload_to_notion_full_workflow(self, monkeypatch, tmp_path):
+        """Should execute full upload workflow."""
+        from unittest.mock import patch, AsyncMock
+        
+        image_folder = str(tmp_path / "images")
+        
+        with patch("chatgpt.fetch_image_generations", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = [
+                {
+                    "id": "img_123",
+                    "url": "https://example.com/image.png",
+                    "prompt": "Test prompt",
+                }
+            ]
+            
+            with patch("chatgpt.download_all_images", new_callable=AsyncMock) as mock_download:
+                mock_download.return_value = None
+                
+                with patch("chatgpt.add_prompt_to_images") as mock_add_prompt:
+                    mock_add_prompt.return_value = None
+                    
+                    with patch("chatgpt.upload_all_images_to_notion", new_callable=AsyncMock) as mock_upload:
+                        mock_upload.return_value = None
+                        
+                        await chatgpt.upload_to_notion(
+                            image_folder=image_folder,
+                            db_id="test_db",
+                            upload_to_notion=True,
+                            remove_in_chatgpt=False,
+                            add_prompt_to_image=True,
+                            limit=5,
+                        )
+                        
+                        mock_fetch.assert_called_once()
+                        mock_download.assert_called_once()
+                        mock_add_prompt.assert_called_once()
+                        mock_upload.assert_called_once()
+
+    async def test_upload_to_notion_skip_download(self, monkeypatch, tmp_path):
+        """Should skip download when add_prompt_to_image=False."""
+        from unittest.mock import patch, AsyncMock
+        
+        image_folder = str(tmp_path / "images")
+        
+        with patch("chatgpt.fetch_image_generations", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = []
+            
+            with patch("chatgpt.download_all_images", new_callable=AsyncMock) as mock_download:
+                mock_download.return_value = None
+                
+                await chatgpt.upload_to_notion(
+                    image_folder=image_folder,
+                    db_id="test_db",
+                    upload_to_notion=False,
+                    add_prompt_to_image=False,
+                    limit=5,
+                )
+                
+                mock_fetch.assert_called_once()
 
 
 @pytest.mark.integration

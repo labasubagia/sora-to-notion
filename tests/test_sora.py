@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from tests.conftest import make_mock_response
+import sora
+
 from sora import (
     archive_generation,
     archive_task,
@@ -18,6 +20,9 @@ from sora import (
     fetch_recent_tasks,
     get_generations_from_tasks,
     get_headers,
+    upload_to_notion,
+    cleanup_trash,
+    cleanup_tasks,
 )
 
 
@@ -217,3 +222,99 @@ class TestSoraDataProcessing:
         assert generations[0]["task_id"] is None
         assert generations[0]["url"] is None
         assert generations[0]["prompt"] is None
+
+
+@pytest.mark.integration
+class TestSoraUploadToNotion:
+    """Tests for upload_to_notion function."""
+
+    async def test_upload_to_notion_full_workflow(self, monkeypatch, tmp_path):
+        """Should execute full upload workflow."""
+        from unittest.mock import patch, AsyncMock
+        
+        image_folder = str(tmp_path / "images")
+        
+        with patch("sora.fetch_recent_tasks", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = {"task_responses": [{"id": "task_1", "generations": []}]}
+            
+            with patch("sora.get_generations_from_tasks") as mock_gen:
+                mock_gen.return_value = [{"id": "gen_1", "prompt": "Test"}]
+                
+                with patch("sora.download_all_images", new_callable=AsyncMock) as mock_download:
+                    mock_download.return_value = None
+                    
+                    with patch("sora.add_prompt_to_images") as mock_add:
+                        mock_add.return_value = None
+                        
+                        with patch("sora.upload_all_images_to_notion", new_callable=AsyncMock) as mock_upload:
+                            mock_upload.return_value = None
+                            
+                            await upload_to_notion(
+                                image_folder=image_folder,
+                                db_id="test_db",
+                                upload_to_notion=True,
+                                trash_in_sora=False,
+                                remove_in_sora=False,
+                                add_prompt_to_image=True,
+                                limit=5,
+                            )
+                            
+                            mock_fetch.assert_called_once()
+                            mock_gen.assert_called_once()
+                            mock_download.assert_called_once()
+                            mock_add.assert_called_once()
+                            mock_upload.assert_called_once()
+
+    async def test_upload_to_notion_trash_in_sora(self, monkeypatch, tmp_path):
+        """Should trash generations in Sora after upload."""
+        from unittest.mock import patch, AsyncMock
+        
+        image_folder = str(tmp_path / "images")
+        
+        with patch("sora.fetch_recent_tasks", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = {"task_responses": []}
+            
+            with patch("sora.get_generations_from_tasks") as mock_gen:
+                mock_gen.return_value = []
+                
+                with patch("sora.download_all_images", new_callable=AsyncMock):
+                    with patch("sora.add_prompt_to_images"):
+                        with patch("sora.upload_all_images_to_notion", new_callable=AsyncMock):
+                            with patch("sora.trash_generations_already_uploaded_to_notion", new_callable=AsyncMock) as mock_trash:
+                                await upload_to_notion(
+                                    image_folder=image_folder,
+                                    db_id="test_db",
+                                    trash_in_sora=True,
+                                )
+                                
+                                mock_trash.assert_called_once()
+
+
+@pytest.mark.integration
+class TestSoraCleanup:
+    """Tests for cleanup functions."""
+
+    async def test_cleanup_trash(self, monkeypatch):
+        """Should cleanup trashed generations."""
+        from unittest.mock import patch, AsyncMock
+        
+        with patch("sora.fetch_all_lists_tasks", new_callable=AsyncMock) as mock_fetch:
+            mock_fetch.return_value = [{"id": "task_1", "generations": []}]
+            
+            with patch("sora.get_generations_from_tasks") as mock_gen:
+                mock_gen.return_value = [{"id": "gen_1"}]
+                
+                with patch("sora.delete_generations", new_callable=AsyncMock) as mock_delete:
+                    await cleanup_trash(task_limit=100)
+                    
+                    mock_fetch.assert_called_once()
+                    mock_gen.assert_called_once()
+                    mock_delete.assert_called_once()
+
+    async def test_cleanup_tasks(self, monkeypatch):
+        """Should cleanup empty tasks."""
+        from unittest.mock import patch
+        
+        with patch("sora.delete_empty_tasks", new_callable=AsyncMock) as mock_delete:
+            await cleanup_tasks()
+            mock_delete.assert_called_once()
