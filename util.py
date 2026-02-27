@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import shutil
+from collections.abc import Sequence
 from pathlib import Path
 
 import aiohttp
@@ -18,7 +19,7 @@ OUTPUT_PATH = "./output"
 logger = logging.getLogger(__name__)
 
 
-def save_to_dataset(dataset: str, data: list[dict] | list[BaseModel]):
+def save_to_dataset(dataset: str, data: Sequence[dict] | Sequence[BaseModel]):
     if dataset is None:
         return
     if len(data) == 0:
@@ -26,10 +27,13 @@ def save_to_dataset(dataset: str, data: list[dict] | list[BaseModel]):
         return
 
     # Convert Pydantic models to dicts if needed
+    dict_data: list[dict]
     if data and isinstance(data[0], BaseModel):
-        data = [item.model_dump() for item in data]
+        dict_data = [item.model_dump() for item in data]  # type: ignore[union-attr]
+    else:
+        dict_data = list(data)  # type: ignore[arg-type]
 
-    df = pd.DataFrame(data)
+    df = pd.DataFrame(dict_data)
     file_path = get_output_path(dataset)
     df.to_csv(file_path, index=False)
     print(f"✅ Saved dataset to {file_path}\n")
@@ -54,7 +58,7 @@ def get_output_path(input_path_str: str, is_dir=False) -> Path:
     return final_path
 
 
-def clean_output_path():
+def clean_output_path() -> None:
     # Except .gitkeep, force remove all files and folders in OUTPUT_PATH
     base_dir: Path = Path(OUTPUT_PATH).resolve()
     if not base_dir.exists():
@@ -108,7 +112,7 @@ def validate_env_vars(required_vars: list[str]) -> None:
     from dotenv import dotenv_values
 
     config = dotenv_values()
-    missing = [var for var in required_vars if not config.get(var, "").strip()]
+    missing = [var for var in required_vars if not (config.get(var) or "").strip()]
     if missing:
         raise ValueError(
             f"Missing required environment variables: {', '.join(missing)}"

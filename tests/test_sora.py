@@ -592,7 +592,7 @@ class TestSoraUploadToNotionValidation:
 
 
 @pytest.mark.integration
-class TestSoraCleanup:
+class TestSoraCleanupExtended:
     """Tests for cleanup functions with more coverage."""
 
     async def test_cleanup_trash_with_dataset(self, monkeypatch, tmp_path):

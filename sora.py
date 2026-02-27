@@ -80,7 +80,7 @@ async def fetch_recent_tasks(
     before_task_id: str | None = None,
     archived: bool = False,
 ) -> dict[str, Any]:
-    params = {"limit": limit}
+    params: dict[str, Any] = {"limit": limit}
     if before_task_id:
         params["before"] = before_task_id
     if archived:
@@ -101,7 +101,7 @@ async def fetch_list_tasks(
     after_task_id: str | None = None,
     archived: bool = False,
 ) -> dict[str, Any]:
-    params = {"limit": limit}
+    params: dict[str, Any] = {"limit": limit}
     if archived:
         params["archived"] = "true"
     if after_task_id:
@@ -157,7 +157,8 @@ async def delete_empty_tasks() -> None:
     for task in tasks:
         if len(task.get("generations", [])) == 0:
             task_id = task.get("id")
-            empty_tasks.append(task_id)
+            if task_id:
+                empty_tasks.append(task_id)
 
     total = len(empty_tasks)
     pbar = tqdm(total=total, desc="Deleting empty tasks")
@@ -201,8 +202,7 @@ def get_generations_from_tasks(
                     prompt=generation.get("prompt") or "",
                 )
             )
-    generations = sorted(generations, key=lambda x: x.created_at)
-    return generations
+    return sorted(generations, key=lambda x: x.created_at or "")
 
 
 @retry_http()
@@ -240,7 +240,7 @@ async def download_all_images(
                     return
 
                 try:
-                    await download_image(session, url, file_path)
+                    await download_image(session, url or "", str(file_path))
                     pbar.write(f"✅ {file_name}")
                 except Exception as e:
                     pbar.write(f"❌ {file_name} failed: {e}")

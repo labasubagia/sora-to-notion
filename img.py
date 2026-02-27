@@ -1,4 +1,5 @@
 import os
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from PIL import Image
@@ -17,7 +18,12 @@ def edit_png_info(
     with Image.open(file_path) as img:
         metadata = PngInfo()
         for key, value in img.info.items():
-            if isinstance(value, str | int):
+            # Only add string keys with string/int values, skip tuples and other types
+            if not isinstance(key, str):
+                continue
+            if isinstance(value, str):
+                metadata.add_text(key, value)
+            elif isinstance(value, int):
                 metadata.add_text(key, str(value))
         for key, value in payload.items():
             if overwrite or key not in img.info:
@@ -26,7 +32,7 @@ def edit_png_info(
 
 
 def add_prompt_to_images(
-    generations: list[ImageGeneration], folder: str, max_workers: int = 10
+    generations: Sequence[ImageGeneration], folder: str, max_workers: int = 10
 ) -> None:
     """Add prompt text metadata to PNG images.
 
@@ -56,7 +62,7 @@ def add_prompt_to_images(
         for _ in range(MAX_RETRIES):
             try:
                 edit_png_info(
-                    file_path,
+                    str(file_path),
                     payload={"Prompt": row.prompt},
                 )
                 pbar.write(f"✅ {file_path}")

@@ -29,13 +29,13 @@ def get_headers() -> dict[str, str]:
     config = get_config()
     headers = {
         "Authorization": (
-            f"Bearer {config.get('CHATGPT_AUTHORIZATION_TOKEN', '').strip()}"
+            f"Bearer {(config.get('CHATGPT_AUTHORIZATION_TOKEN') or '').strip()}"
         ),
-        "User-Agent": config.get("CHATGPT_USER_AGENT", "").strip(),
+        "User-Agent": (config.get("CHATGPT_USER_AGENT") or "").strip(),
         "Content-Type": "application/json",
     }
 
-    cookie_base64 = config.get("CHATGPT_COOKIE_STRING_BASE64", "").strip()
+    cookie_base64 = (config.get("CHATGPT_COOKIE_STRING_BASE64") or "").strip()
     if cookie_base64:
         headers["Cookie"] = b64decode(cookie_base64).decode("utf-8").strip()
 
@@ -131,7 +131,7 @@ def get_prompt_from_image_node_in_conversation(
     data: dict[str, Any], start_node_id: str, asset_pointer: str
 ) -> str | None:
     mapping = data["mapping"]
-    current_id = start_node_id
+    current_id: str | None = start_node_id
     if current_id not in mapping:
         current_id = get_conversation_mapping_key_by_asset_pointer(data, asset_pointer)
         if current_id is None:
@@ -203,11 +203,14 @@ async def fetch_image_generations(
         print()
 
         # Filter out None and exceptions
-        generations = [
-            g for g in results if g is not None and not isinstance(g, Exception)
+        valid_generations = [
+            g
+            for g in results
+            if g is not None
+            and not isinstance(g, Exception)
+            and isinstance(g, ChatGPTImageGeneration)
         ]
-        generations = sorted(generations, key=lambda x: x.created_at)
-        return generations
+        return sorted(valid_generations, key=lambda x: x.created_at)
 
 
 async def download_all_images(
@@ -233,7 +236,7 @@ async def download_all_images(
 
                 try:
                     await download_image(
-                        session, row.url, file_path, headers=get_headers()
+                        session, row.url, str(file_path), headers=get_headers()
                     )
                     pbar.write(f"✅ {file_name}")
                 except Exception as e:

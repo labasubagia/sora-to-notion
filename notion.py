@@ -1,5 +1,6 @@
 import asyncio
 import os
+from collections.abc import Sequence
 from typing import Any
 
 import aiohttp
@@ -172,7 +173,7 @@ async def add_page_to_db(
 
 
 async def upload_all_images_to_notion(
-    generations: list[ImageGeneration], db_id: str, image_folder: str
+    generations: Sequence[ImageGeneration], db_id: str, image_folder: str
 ) -> None:
     total = len(generations)
     pbar = tqdm(total=total, desc="Uploading to Notion")
