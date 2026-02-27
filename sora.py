@@ -193,15 +193,15 @@ def get_generations_from_tasks(
     for task in tasks:
         for generation in task.get("generations", []):
             generations.append(
-                {
-                    "created_at": task.get("created_at"),
-                    "id": generation.get("id"),
-                    "task_id": generation.get("task_id"),
-                    "url": generation.get("url"),
-                    "prompt": generation.get("prompt"),
-                }
+                SoraImageGeneration(
+                    created_at=task.get("created_at"),
+                    id=generation.get("id"),
+                    task_id=generation.get("task_id"),
+                    url=generation.get("url"),
+                    prompt=generation.get("prompt") or "",
+                )
             )
-    generations = sorted(generations, key=lambda x: x["created_at"])
+    generations = sorted(generations, key=lambda x: x.created_at)
     return generations
 
 
@@ -229,8 +229,8 @@ async def download_all_images(
 
         async def download(generation: SoraImageGeneration):
             async with semaphore:
-                generation_id = generation["id"]
-                url = generation["url"]
+                generation_id = generation.id
+                url = generation.url
                 file_name = f"{generation_id}.png"
                 file_path = get_output_path(os.path.join(download_folder, file_name))
 
@@ -274,7 +274,7 @@ async def delete_generations(generations: list[SoraImageGeneration]) -> None:
 
         async def delete(generation: SoraImageGeneration):
             async with semaphore:
-                generation_id = generation.get("id")
+                generation_id = generation.id
                 try:
                     await delete_generation(session, generation_id)
                     pbar.write(f"✅ {generation_id}")
@@ -301,7 +301,7 @@ async def delete_generations_already_uploaded_to_notion(
 
         async def delete(generation: SoraImageGeneration):
             async with semaphore:
-                generation_id = generation.get("id")
+                generation_id = generation.id
                 file_name = f"{generation_id}.png"
 
                 try:
@@ -335,7 +335,7 @@ async def trash_generations_already_uploaded_to_notion(
 
         async def trash(generation: SoraImageGeneration):
             async with semaphore:
-                generation_id = generation.get("id")
+                generation_id = generation.id
                 file_name = f"{generation_id}.png"
 
                 try:

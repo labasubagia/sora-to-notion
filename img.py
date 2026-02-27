@@ -46,7 +46,7 @@ def add_prompt_to_images(
     pbar = tqdm(total=total, desc="Adding prompts to images")
 
     def add_prompt(row: ImageGeneration):
-        file_name = f"{row['id']}.png"
+        file_name = f"{row.id}.png"
         file_path = get_output_path(os.path.join(folder, file_name))
         if not os.path.exists(file_path):
             pbar.write(f"⚠️  {file_path} not found, skipped")
@@ -57,7 +57,7 @@ def add_prompt_to_images(
             try:
                 edit_png_info(
                     file_path,
-                    payload={"Prompt": row["prompt"]},
+                    payload={"Prompt": row.prompt},
                 )
                 pbar.write(f"✅ {file_path}")
                 pbar.update(1)

@@ -179,15 +179,15 @@ async def fetch_image_generations(
                         img_gen["created_at"], tz=timezone.utc
                     ).isoformat(timespec="microseconds")
                     pbar.write(f"✅ img ID {img_gen['id']}")
-                    return {
-                        "created_at": created_at,
-                        "id": img_gen["id"],
-                        "conversation_id": img_gen["conversation_id"],
-                        "message_id": img_gen["message_id"],
-                        "asset_pointer": img_gen["asset_pointer"],
-                        "url": img_gen["url"],
-                        "prompt": prompt,
-                    }
+                    return ChatGPTImageGeneration(
+                        created_at=created_at,
+                        id=img_gen["id"],
+                        conversation_id=img_gen["conversation_id"],
+                        message_id=img_gen["message_id"],
+                        asset_pointer=img_gen["asset_pointer"],
+                        url=img_gen["url"],
+                        prompt=prompt or "",
+                    )
                 except Exception as e:
                     pbar.write(f"❌ img ID {img_gen['id']} failed: {e}")
                     return None
@@ -206,7 +206,7 @@ async def fetch_image_generations(
         generations = [
             g for g in results if g is not None and not isinstance(g, Exception)
         ]
-        generations = sorted(generations, key=lambda x: x["created_at"])
+        generations = sorted(generations, key=lambda x: x.created_at)
         return generations
 
 
@@ -223,7 +223,7 @@ async def download_all_images(
 
         async def download(row: ChatGPTImageGeneration):
             async with semaphore:
-                file_name = f"{row['id']}.png"
+                file_name = f"{row.id}.png"
                 file_path = get_output_path(os.path.join(download_folder, file_name))
 
                 if os.path.exists(file_path):
@@ -233,7 +233,7 @@ async def download_all_images(
 
                 try:
                     await download_image(
-                        session, row["url"], file_path, headers=get_headers()
+                        session, row.url, file_path, headers=get_headers()
                     )
                     pbar.write(f"✅ {file_name}")
                 except Exception as e:
@@ -250,7 +250,7 @@ async def download_all_images(
 async def delete_conversation_of_image_generation_uploaded_to_notion(
     generations: list[ChatGPTImageGeneration], db_id: str
 ) -> None:
-    generations = list({gen["conversation_id"]: gen for gen in generations}.values())
+    generations = list({gen.conversation_id: gen for gen in generations}.values())
     total = len(generations)
     pbar = tqdm(total=total, desc="Deleting conversations")
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
@@ -261,8 +261,8 @@ async def delete_conversation_of_image_generation_uploaded_to_notion(
 
         async def delete(row: ChatGPTImageGeneration):
             async with semaphore:
-                file_name = f"{row['id']}.png"
-                conversation_id = row["conversation_id"]
+                file_name = f"{row.id}.png"
+                conversation_id = row.conversation_id
 
                 try:
                     exists = await is_page_exists_in_db(session, db_id, file_name)

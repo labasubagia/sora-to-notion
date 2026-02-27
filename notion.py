@@ -202,7 +202,7 @@ async def upload_all_images_to_notion(
                 finally:
                     pbar.update(1)
 
-        await asyncio.gather(*[upload(row["id"], row["prompt"]) for row in generations])
+        await asyncio.gather(*[upload(row.id, row.prompt) for row in generations])
 
     pbar.close()
     print()  # Add spacing after progress bar

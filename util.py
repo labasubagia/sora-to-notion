@@ -5,6 +5,7 @@ from pathlib import Path
 
 import aiohttp
 import pandas as pd
+from pydantic import BaseModel
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 MAX_RETRIES = 5
@@ -17,14 +18,18 @@ OUTPUT_PATH = "./output"
 logger = logging.getLogger(__name__)
 
 
-def save_to_dataset(dataset: str, data: list[dict]):
+def save_to_dataset(dataset: str, data: list[dict] | list[BaseModel]):
     if dataset is None:
         return
     if len(data) == 0:
         print("No generations to save to dataset.")
         return
-    else:
-        df = pd.DataFrame(data)
+
+    # Convert Pydantic models to dicts if needed
+    if data and isinstance(data[0], BaseModel):
+        data = [item.model_dump() for item in data]
+
+    df = pd.DataFrame(data)
     file_path = get_output_path(dataset)
     df.to_csv(file_path, index=False)
     print(f"✅ Saved dataset to {file_path}\n")

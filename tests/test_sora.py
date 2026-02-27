@@ -170,9 +170,9 @@ class TestSoraDataProcessing:
         generations = get_generations_from_tasks(tasks)
 
         assert len(generations) == 2
-        assert generations[0]["id"] == "gen_abc"
-        assert generations[0]["prompt"] == "First prompt"
-        assert generations[1]["id"] == "gen_def"
+        assert generations[0].id == "gen_abc"
+        assert generations[0].prompt == "First prompt"
+        assert generations[1].id == "gen_def"
 
     def test_get_generations_sorted_by_created_at(self):
         """Should sort generations by created_at."""
@@ -196,8 +196,8 @@ class TestSoraDataProcessing:
         generations = get_generations_from_tasks(tasks)
 
         assert len(generations) == 2
-        assert generations[0]["id"] == "gen_earlier"
-        assert generations[1]["id"] == "gen_later"
+        assert generations[0].id == "gen_earlier"
+        assert generations[1].id == "gen_later"
 
     def test_get_generations_empty_tasks(self):
         """Should handle tasks with no generations."""
@@ -224,9 +224,9 @@ class TestSoraDataProcessing:
         generations = get_generations_from_tasks(tasks)
 
         assert len(generations) == 1
-        assert generations[0]["task_id"] is None
-        assert generations[0]["url"] is None
-        assert generations[0]["prompt"] is None
+        assert generations[0].task_id is None
+        assert generations[0].url is None
+        assert generations[0].prompt == ""
 
 
 @pytest.mark.integration
@@ -400,12 +400,13 @@ class TestSoraDownloadImages:
     async def test_download_all_images_success(self, monkeypatch, tmp_path):
         """Should download all images."""
         from unittest.mock import patch, AsyncMock
+        from models import SoraImageGeneration
         
         monkeypatch.setattr("util.OUTPUT_PATH", str(tmp_path))
         download_folder = "images"
         generations = [
-            {"id": "gen_1", "url": "https://example.com/img1.png"},
-            {"id": "gen_2", "url": "https://example.com/img2.png"},
+            SoraImageGeneration(id="gen_1", url="https://example.com/img1.png"),
+            SoraImageGeneration(id="gen_2", url="https://example.com/img2.png"),
         ]
         
         with patch("sora.download_image", new_callable=AsyncMock) as mock_download:
@@ -416,6 +417,7 @@ class TestSoraDownloadImages:
     async def test_download_all_images_skip_existing(self, monkeypatch, tmp_path, capsys):
         """Should skip already downloaded images."""
         from unittest.mock import patch, AsyncMock
+        from models import SoraImageGeneration
         
         monkeypatch.setattr("util.OUTPUT_PATH", str(tmp_path))
         download_folder = "images"
@@ -426,8 +428,8 @@ class TestSoraDownloadImages:
         (images_dir / "gen_1.png").write_bytes(b"fake png")
         
         generations = [
-            {"id": "gen_1", "url": "https://example.com/img1.png"},
-            {"id": "gen_2", "url": "https://example.com/img2.png"},
+            SoraImageGeneration(id="gen_1", url="https://example.com/img1.png"),
+            SoraImageGeneration(id="gen_2", url="https://example.com/img2.png"),
         ]
         
         with patch("sora.download_image", new_callable=AsyncMock) as mock_download:
@@ -456,8 +458,9 @@ class TestSoraDeleteGenerations:
     async def test_delete_generations(self, monkeypatch):
         """Should delete multiple generations."""
         from unittest.mock import patch, AsyncMock
+        from models import SoraImageGeneration
         
-        generations = [{"id": "gen_1"}, {"id": "gen_2"}]
+        generations = [SoraImageGeneration(id="gen_1"), SoraImageGeneration(id="gen_2")]
         
         with patch("sora.delete_generation", new_callable=AsyncMock) as mock_delete:
             await delete_generations(generations)
@@ -467,8 +470,9 @@ class TestSoraDeleteGenerations:
     async def test_delete_generations_already_uploaded_to_notion(self, monkeypatch, capsys):
         """Should delete generations that exist in Notion."""
         from unittest.mock import patch, AsyncMock
+        from models import SoraImageGeneration
         
-        generations = [{"id": "gen_1"}]
+        generations = [SoraImageGeneration(id="gen_1")]
         
         with patch("sora.is_page_exists_in_db", new_callable=AsyncMock) as mock_exists:
             mock_exists.return_value = True
@@ -484,8 +488,9 @@ class TestSoraDeleteGenerations:
     async def test_delete_generations_skip_not_uploaded(self, monkeypatch, capsys):
         """Should skip generations not in Notion."""
         from unittest.mock import patch, AsyncMock
+        from models import SoraImageGeneration
         
-        generations = [{"id": "gen_1"}]
+        generations = [SoraImageGeneration(id="gen_1")]
         
         with patch("sora.is_page_exists_in_db", new_callable=AsyncMock) as mock_exists:
             mock_exists.return_value = False
@@ -508,8 +513,9 @@ class TestSoraTrashGenerations:
     async def test_trash_generations_already_uploaded_to_notion(self, monkeypatch):
         """Should trash generations that exist in Notion."""
         from unittest.mock import patch, AsyncMock
+        from models import SoraImageGeneration
         
-        generations = [{"id": "gen_1"}]
+        generations = [SoraImageGeneration(id="gen_1")]
         
         with patch("sora.is_page_exists_in_db", new_callable=AsyncMock) as mock_exists:
             mock_exists.return_value = True
@@ -525,8 +531,9 @@ class TestSoraTrashGenerations:
     async def test_trash_generations_skip_not_uploaded(self, monkeypatch, capsys):
         """Should skip generations not in Notion."""
         from unittest.mock import patch, AsyncMock
+        from models import SoraImageGeneration
         
-        generations = [{"id": "gen_1"}]
+        generations = [SoraImageGeneration(id="gen_1")]
         
         with patch("sora.is_page_exists_in_db", new_callable=AsyncMock) as mock_exists:
             mock_exists.return_value = False

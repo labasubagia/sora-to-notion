@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from models import SoraImageGeneration
 from tests.conftest import make_mock_response
 
 from notion import (
@@ -222,6 +223,7 @@ class TestNotionUploadAllImages:
     async def test_upload_all_images_success(self, monkeypatch, tmp_path):
         """Should upload all images to Notion."""
         from unittest.mock import patch, AsyncMock
+        from models import SoraImageGeneration
         
         # Use relative path within tmp_path
         monkeypatch.setattr("util.OUTPUT_PATH", str(tmp_path))
@@ -234,8 +236,20 @@ class TestNotionUploadAllImages:
         (images_dir / "img_456.png").write_bytes(b"fake png")
         
         generations = [
-            {"id": "img_123", "prompt": "Test prompt 1"},
-            {"id": "img_456", "prompt": "Test prompt 2"},
+            SoraImageGeneration(
+                created_at="2024-01-01T00:00:00",
+                id="img_123",
+                task_id="task_1",
+                url="https://example.com/img1.png",
+                prompt="Test prompt 1"
+            ),
+            SoraImageGeneration(
+                created_at="2024-01-01T00:00:00",
+                id="img_456",
+                task_id="task_2",
+                url="https://example.com/img2.png",
+                prompt="Test prompt 2"
+            ),
         ]
         
         with patch("notion.is_page_exists_in_db", new_callable=AsyncMock) as mock_exists:
@@ -265,7 +279,15 @@ class TestNotionUploadAllImages:
         images_dir.mkdir()
         (images_dir / "img_123.png").write_bytes(b"fake png")
         
-        generations = [{"id": "img_123", "prompt": "Test prompt"}]
+        generations = [
+            SoraImageGeneration(
+                created_at="2024-01-01T00:00:00",
+                id="img_123",
+                task_id="task_1",
+                url="https://example.com/img.png",
+                prompt="Test prompt"
+            )
+        ]
         
         with patch("notion.is_page_exists_in_db", new_callable=AsyncMock) as mock_exists:
             mock_exists.return_value = True

@@ -1,6 +1,8 @@
 """Type definitions for image generation data structures."""
 
-from typing import Protocol, TypedDict
+from typing import Protocol
+
+from pydantic import BaseModel, ConfigDict
 
 
 class ImageGeneration(Protocol):
@@ -10,8 +12,10 @@ class ImageGeneration(Protocol):
     prompt: str
 
 
-class ChatGPTImageGeneration(TypedDict):
+class ChatGPTImageGeneration(BaseModel):
     """Image generation from ChatGPT DALL-E."""
+
+    model_config = ConfigDict(extra="forbid")
 
     created_at: str
     id: str
@@ -19,14 +23,16 @@ class ChatGPTImageGeneration(TypedDict):
     message_id: str
     asset_pointer: str
     url: str
-    prompt: str
+    prompt: str = ""
 
 
-class SoraImageGeneration(TypedDict):
+class SoraImageGeneration(BaseModel):
     """Image generation from Sora."""
 
-    created_at: str
+    model_config = ConfigDict(extra="forbid")
+
+    created_at: str | None = None
     id: str
-    task_id: str
-    url: str
-    prompt: str
+    task_id: str | None = None
+    url: str | None = None
+    prompt: str = ""

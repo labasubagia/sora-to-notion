@@ -77,49 +77,49 @@ class TestEditPngInfo:
 class TestAddPromptToImages:
     """Tests for add_prompt_to_images function."""
 
-    def test_missing_image_skipped(self, tmp_path, capsys, sample_generations, monkeypatch):
+    def test_missing_image_skipped(self, tmp_path, capsys, sample_chatgpt_generations, monkeypatch):
         """Missing images should be skipped with warning."""
         # Use relative path within tmp_path
         folder = tmp_path / "images"
         folder.mkdir()
         monkeypatch.setattr("util.OUTPUT_PATH", str(tmp_path))
 
-        add_prompt_to_images(sample_generations, "images")
+        add_prompt_to_images(sample_chatgpt_generations, "images")
 
         captured = capsys.readouterr()
         assert "not found, skipped" in captured.out
 
-    def test_adds_prompts(self, tmp_path, capsys, sample_generations, sample_image_bytes, monkeypatch):
+    def test_adds_prompts(self, tmp_path, capsys, sample_chatgpt_generations, sample_image_bytes, monkeypatch):
         """Should add prompts to existing images."""
         folder = tmp_path / "images"
         folder.mkdir()
         monkeypatch.setattr("util.OUTPUT_PATH", str(tmp_path))
 
         # Create test images
-        for gen in sample_generations:
-            img_path = folder / f"{gen['id']}.png"
+        for gen in sample_chatgpt_generations:
+            img_path = folder / f"{gen.id}.png"
             img_path.write_bytes(sample_image_bytes)
 
-        add_prompt_to_images(sample_generations, "images")
+        add_prompt_to_images(sample_chatgpt_generations, "images")
 
         # Verify prompts were added
-        for gen in sample_generations:
-            img_path = folder / f"{gen['id']}.png"
+        for gen in sample_chatgpt_generations:
+            img_path = folder / f"{gen.id}.png"
             with Image.open(img_path) as img:
-                assert img.info.get("Prompt") == gen["prompt"]
+                assert img.info.get("Prompt") == gen.prompt
 
         captured = capsys.readouterr()
         assert "✅" in captured.out
 
-    def test_retry_on_failure(self, tmp_path, capsys, sample_generations, sample_image_bytes, monkeypatch):
+    def test_retry_on_failure(self, tmp_path, capsys, sample_chatgpt_generations, sample_image_bytes, monkeypatch):
         """Should retry on failure up to MAX_RETRIES."""
         folder = tmp_path / "images"
         folder.mkdir()
         monkeypatch.setattr("util.OUTPUT_PATH", str(tmp_path))
 
         # Create test image
-        for gen in sample_generations:
-            img_path = folder / f"{gen['id']}.png"
+        for gen in sample_chatgpt_generations:
+            img_path = folder / f"{gen.id}.png"
             img_path.write_bytes(sample_image_bytes)
 
         # Mock edit_png_info to fail twice then succeed
@@ -131,26 +131,26 @@ class TestAddPromptToImages:
                 raise IOError("Simulated failure")
 
         with patch("img.edit_png_info", side_effect=flaky_edit):
-            add_prompt_to_images(sample_generations[:1], "images")
+            add_prompt_to_images(sample_chatgpt_generations[:1], "images")
 
         captured = capsys.readouterr()
         assert "retrying" in captured.out
         assert "✅" in captured.out
 
-    def test_fails_after_max_retries(self, tmp_path, capsys, sample_generations, sample_image_bytes, monkeypatch):
+    def test_fails_after_max_retries(self, tmp_path, capsys, sample_chatgpt_generations, sample_image_bytes, monkeypatch):
         """Should fail after MAX_RETRIES attempts."""
         folder = tmp_path / "images"
         folder.mkdir()
         monkeypatch.setattr("util.OUTPUT_PATH", str(tmp_path))
 
         # Create test image
-        for gen in sample_generations:
-            img_path = folder / f"{gen['id']}.png"
+        for gen in sample_chatgpt_generations:
+            img_path = folder / f"{gen.id}.png"
             img_path.write_bytes(sample_image_bytes)
 
         # Mock edit_png_info to always fail
         with patch("img.edit_png_info", side_effect=IOError("Always fails")):
-            add_prompt_to_images(sample_generations[:1], "images")
+            add_prompt_to_images(sample_chatgpt_generations[:1], "images")
 
         captured = capsys.readouterr()
         assert f"failed after {MAX_RETRIES} retries" in captured.out
