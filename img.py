@@ -1,11 +1,11 @@
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any
 
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 from tqdm import tqdm
 
+from models import ImageGeneration
 from util import MAX_RETRIES, get_output_path
 
 
@@ -26,7 +26,7 @@ def edit_png_info(
 
 
 def add_prompt_to_images(
-    generations: list[dict[str, Any]], folder: str, max_workers: int = 10
+    generations: list[ImageGeneration], folder: str, max_workers: int = 10
 ) -> None:
     """Add prompt text metadata to PNG images.
 
@@ -45,7 +45,7 @@ def add_prompt_to_images(
     total = len(generations)
     pbar = tqdm(total=total, desc="Adding prompts to images")
 
-    def add_prompt(row: dict[str, Any]):
+    def add_prompt(row: ImageGeneration):
         file_name = f"{row['id']}.png"
         file_path = get_output_path(os.path.join(folder, file_name))
         if not os.path.exists(file_path):

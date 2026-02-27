@@ -6,6 +6,7 @@ import aiohttp
 from tqdm.asyncio import tqdm
 
 from img import add_prompt_to_images
+from models import SoraImageGeneration
 from notion import is_page_exists_in_db, upload_all_images_to_notion
 from util import (
     MAX_CONCURRENT_DOWNLOADS,
@@ -187,8 +188,8 @@ async def delete_empty_tasks() -> None:
 
 def get_generations_from_tasks(
     tasks: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    generations: list[dict[str, Any]] = []
+) -> list[SoraImageGeneration]:
+    generations: list[SoraImageGeneration] = []
     for task in tasks:
         for generation in task.get("generations", []):
             generations.append(
@@ -218,7 +219,7 @@ async def get_generation_download_url(
 
 
 async def download_all_images(
-    generations: list[dict[str, Any]], download_folder: str = "sora_images"
+    generations: list[SoraImageGeneration], download_folder: str = "sora_images"
 ) -> None:
     total = len(generations)
     pbar = tqdm(total=total, desc="Downloading images")
@@ -226,7 +227,7 @@ async def download_all_images(
 
     async with aiohttp.ClientSession(timeout=get_http_timeout()) as session:
 
-        async def download(generation: dict[str, Any]):
+        async def download(generation: SoraImageGeneration):
             async with semaphore:
                 generation_id = generation["id"]
                 url = generation["url"]
@@ -262,7 +263,7 @@ async def delete_generation(session: aiohttp.ClientSession, id: str) -> dict[str
         return json_data
 
 
-async def delete_generations(generations: list[dict[str, Any]]) -> None:
+async def delete_generations(generations: list[SoraImageGeneration]) -> None:
     total = len(generations)
     pbar = tqdm(total=total, desc="Deleting generations")
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
@@ -271,7 +272,7 @@ async def delete_generations(generations: list[dict[str, Any]]) -> None:
         headers=get_headers(), timeout=get_http_timeout()
     ) as session:
 
-        async def delete(generation: dict[str, Any]):
+        async def delete(generation: SoraImageGeneration):
             async with semaphore:
                 generation_id = generation.get("id")
                 try:
@@ -289,7 +290,7 @@ async def delete_generations(generations: list[dict[str, Any]]) -> None:
 
 
 async def delete_generations_already_uploaded_to_notion(
-    generations: list[dict[str, Any]],
+    generations: list[SoraImageGeneration],
     db_id: str,
 ) -> None:
     total = len(generations)
@@ -298,7 +299,7 @@ async def delete_generations_already_uploaded_to_notion(
 
     async with aiohttp.ClientSession(timeout=get_http_timeout()) as session:
 
-        async def delete(generation: dict[str, Any]):
+        async def delete(generation: SoraImageGeneration):
             async with semaphore:
                 generation_id = generation.get("id")
                 file_name = f"{generation_id}.png"
@@ -323,7 +324,7 @@ async def delete_generations_already_uploaded_to_notion(
 
 
 async def trash_generations_already_uploaded_to_notion(
-    generations: list[dict[str, Any]],
+    generations: list[SoraImageGeneration],
     db_id: str,
 ) -> None:
     total = len(generations)
@@ -332,7 +333,7 @@ async def trash_generations_already_uploaded_to_notion(
 
     async with aiohttp.ClientSession(timeout=get_http_timeout()) as session:
 
-        async def trash(generation: dict[str, Any]):
+        async def trash(generation: SoraImageGeneration):
             async with semaphore:
                 generation_id = generation.get("id")
                 file_name = f"{generation_id}.png"

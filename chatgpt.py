@@ -8,6 +8,7 @@ import aiohttp
 from tqdm.asyncio import tqdm
 
 from img import add_prompt_to_images
+from models import ChatGPTImageGeneration
 from notion import is_page_exists_in_db, upload_all_images_to_notion
 from util import (
     MAX_CONCURRENT_DOWNLOADS,
@@ -154,7 +155,7 @@ def get_prompt_from_image_node_in_conversation(
 
 async def fetch_image_generations(
     limit: int = 100,
-) -> list[dict[str, Any]]:
+) -> list[ChatGPTImageGeneration]:
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
     async with aiohttp.ClientSession(timeout=get_http_timeout()) as session:
@@ -165,7 +166,7 @@ async def fetch_image_generations(
 
         async def fetch_generation_details(
             img_gen: dict[str, Any],
-        ) -> dict[str, Any] | None:
+        ) -> ChatGPTImageGeneration | None:
             async with semaphore:
                 try:
                     detail = await get_conversation_details(
@@ -210,7 +211,7 @@ async def fetch_image_generations(
 
 
 async def download_all_images(
-    generations: list[dict[str, Any]], download_folder: str
+    generations: list[ChatGPTImageGeneration], download_folder: str
 ) -> None:
     total = len(generations)
     pbar = tqdm(total=total, desc="Downloading images")
@@ -220,7 +221,7 @@ async def download_all_images(
         headers=get_headers(), timeout=get_http_timeout()
     ) as session:
 
-        async def download(row: dict[str, Any]):
+        async def download(row: ChatGPTImageGeneration):
             async with semaphore:
                 file_name = f"{row['id']}.png"
                 file_path = get_output_path(os.path.join(download_folder, file_name))
@@ -247,7 +248,7 @@ async def download_all_images(
 
 
 async def delete_conversation_of_image_generation_uploaded_to_notion(
-    generations: list[dict[str, Any]], db_id: str
+    generations: list[ChatGPTImageGeneration], db_id: str
 ) -> None:
     generations = list({gen["conversation_id"]: gen for gen in generations}.values())
     total = len(generations)
@@ -258,7 +259,7 @@ async def delete_conversation_of_image_generation_uploaded_to_notion(
         headers=get_headers(), timeout=get_http_timeout()
     ) as session:
 
-        async def delete(row: dict[str, Any]):
+        async def delete(row: ChatGPTImageGeneration):
             async with semaphore:
                 file_name = f"{row['id']}.png"
                 conversation_id = row["conversation_id"]

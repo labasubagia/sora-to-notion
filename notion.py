@@ -5,6 +5,7 @@ from typing import Any
 import aiohttp
 from tqdm.asyncio import tqdm
 
+from models import ImageGeneration
 from util import (
     MAX_CONCURRENT_REQUESTS,
     get_config,
@@ -171,7 +172,7 @@ async def add_page_to_db(
 
 
 async def upload_all_images_to_notion(
-    generations: list[dict[str, Any]], db_id: str, image_folder: str
+    generations: list[ImageGeneration], db_id: str, image_folder: str
 ) -> None:
     total = len(generations)
     pbar = tqdm(total=total, desc="Uploading to Notion")
