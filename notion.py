@@ -1,10 +1,12 @@
 import asyncio
 import os
+from collections.abc import Sequence
 from typing import Any
 
 import aiohttp
 from tqdm.asyncio import tqdm
 
+from models import ImageGeneration
 from util import (
     MAX_CONCURRENT_REQUESTS,
     get_config,
@@ -171,7 +173,7 @@ async def add_page_to_db(
 
 
 async def upload_all_images_to_notion(
-    generations: list[dict[str, Any]], db_id: str, image_folder: str
+    generations: Sequence[ImageGeneration], db_id: str, image_folder: str
 ) -> None:
     total = len(generations)
     pbar = tqdm(total=total, desc="Uploading to Notion")
@@ -201,7 +203,7 @@ async def upload_all_images_to_notion(
                 finally:
                     pbar.update(1)
 
-        await asyncio.gather(*[upload(row["id"], row["prompt"]) for row in generations])
+        await asyncio.gather(*[upload(row.id, row.prompt) for row in generations])
 
     pbar.close()
     print()  # Add spacing after progress bar

@@ -108,8 +108,8 @@ class TestChatGPTFetchImageGenerations:
                     
                     assert isinstance(result, list)
                     assert len(result) == 1
-                    assert result[0]["id"] == "img_123"
-                    assert result[0]["prompt"] == "Test prompt"
+                    assert result[0].id == "img_123"
+                    assert result[0].prompt == "Test prompt"
 
     async def test_fetch_image_generations_empty(self, mock_aiohttp_session, monkeypatch):
         """Should return empty list when no generations."""
@@ -343,12 +343,29 @@ class TestChatGPTDownloadImages:
     async def test_download_all_images_success(self, monkeypatch, tmp_path):
         """Should download all images."""
         from unittest.mock import patch, AsyncMock
+        from models import ChatGPTImageGeneration
         
         monkeypatch.setattr("util.OUTPUT_PATH", str(tmp_path))
         download_folder = "images"
         generations = [
-            {"id": "img_1", "url": "https://example.com/img1.png"},
-            {"id": "img_2", "url": "https://example.com/img2.png"},
+            ChatGPTImageGeneration(
+                created_at="2024-01-01T00:00:00",
+                id="img_1",
+                conversation_id="conv_1",
+                message_id="msg_1",
+                asset_pointer="asset_1",
+                url="https://example.com/img1.png",
+                prompt="test 1"
+            ),
+            ChatGPTImageGeneration(
+                created_at="2024-01-01T00:00:00",
+                id="img_2",
+                conversation_id="conv_2",
+                message_id="msg_2",
+                asset_pointer="asset_2",
+                url="https://example.com/img2.png",
+                prompt="test 2"
+            ),
         ]
         
         with patch("chatgpt.download_image", new_callable=AsyncMock) as mock_download:
@@ -359,6 +376,7 @@ class TestChatGPTDownloadImages:
     async def test_download_all_images_skip_existing(self, monkeypatch, tmp_path, capsys):
         """Should skip already downloaded images."""
         from unittest.mock import patch, AsyncMock
+        from models import ChatGPTImageGeneration
         
         monkeypatch.setattr("util.OUTPUT_PATH", str(tmp_path))
         download_folder = "images"
@@ -369,8 +387,24 @@ class TestChatGPTDownloadImages:
         (images_dir / "img_1.png").write_bytes(b"fake png")
         
         generations = [
-            {"id": "img_1", "url": "https://example.com/img1.png"},
-            {"id": "img_2", "url": "https://example.com/img2.png"},
+            ChatGPTImageGeneration(
+                created_at="2024-01-01T00:00:00",
+                id="img_1",
+                conversation_id="conv_1",
+                message_id="msg_1",
+                asset_pointer="asset_1",
+                url="https://example.com/img1.png",
+                prompt="test 1"
+            ),
+            ChatGPTImageGeneration(
+                created_at="2024-01-01T00:00:00",
+                id="img_2",
+                conversation_id="conv_2",
+                message_id="msg_2",
+                asset_pointer="asset_2",
+                url="https://example.com/img2.png",
+                prompt="test 2"
+            ),
         ]
         
         with patch("chatgpt.download_image", new_callable=AsyncMock) as mock_download:
@@ -389,10 +423,27 @@ class TestChatGPTDeleteConversation:
     async def test_delete_conversations_success(self, monkeypatch, capsys):
         """Should delete conversations for images in Notion."""
         from unittest.mock import patch, AsyncMock
+        from models import ChatGPTImageGeneration
         
         generations = [
-            {"id": "img_1", "conversation_id": "conv_1"},
-            {"id": "img_2", "conversation_id": "conv_2"},
+            ChatGPTImageGeneration(
+                created_at="2024-01-01T00:00:00",
+                id="img_1",
+                conversation_id="conv_1",
+                message_id="msg_1",
+                asset_pointer="asset_1",
+                url="https://example.com/img1.png",
+                prompt="test 1"
+            ),
+            ChatGPTImageGeneration(
+                created_at="2024-01-01T00:00:00",
+                id="img_2",
+                conversation_id="conv_2",
+                message_id="msg_2",
+                asset_pointer="asset_2",
+                url="https://example.com/img2.png",
+                prompt="test 2"
+            ),
         ]
         
         with patch("chatgpt.is_page_exists_in_db", new_callable=AsyncMock) as mock_exists:
@@ -409,8 +460,19 @@ class TestChatGPTDeleteConversation:
     async def test_delete_conversations_skip_not_in_notion(self, monkeypatch, capsys):
         """Should skip conversations for images not in Notion."""
         from unittest.mock import patch, AsyncMock
+        from models import ChatGPTImageGeneration
         
-        generations = [{"id": "img_1", "conversation_id": "conv_1"}]
+        generations = [
+            ChatGPTImageGeneration(
+                created_at="2024-01-01T00:00:00",
+                id="img_1",
+                conversation_id="conv_1",
+                message_id="msg_1",
+                asset_pointer="asset_1",
+                url="https://example.com/img1.png",
+                prompt="test 1"
+            )
+        ]
         
         with patch("chatgpt.is_page_exists_in_db", new_callable=AsyncMock) as mock_exists:
             mock_exists.return_value = False
@@ -428,11 +490,28 @@ class TestChatGPTDeleteConversation:
     async def test_delete_conversations_deduplicates(self, monkeypatch):
         """Should deduplicate by conversation_id."""
         from unittest.mock import patch, AsyncMock
+        from models import ChatGPTImageGeneration
         
         # Two images from same conversation
         generations = [
-            {"id": "img_1", "conversation_id": "conv_1"},
-            {"id": "img_2", "conversation_id": "conv_1"},
+            ChatGPTImageGeneration(
+                created_at="2024-01-01T00:00:00",
+                id="img_1",
+                conversation_id="conv_1",
+                message_id="msg_1",
+                asset_pointer="asset_1",
+                url="https://example.com/img1.png",
+                prompt="test 1"
+            ),
+            ChatGPTImageGeneration(
+                created_at="2024-01-01T00:00:00",
+                id="img_2",
+                conversation_id="conv_1",
+                message_id="msg_2",
+                asset_pointer="asset_2",
+                url="https://example.com/img2.png",
+                prompt="test 2"
+            ),
         ]
         
         with patch("chatgpt.is_page_exists_in_db", new_callable=AsyncMock) as mock_exists:

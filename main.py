@@ -25,7 +25,7 @@ def sora_upload_to_notion(
         str, typer.Option(help="Path to the folder containing images")
     ] = "sora_images",
     db_id: Annotated[
-        str,
+        str | None,
         typer.Option(help="Notion Database ID", callback=validate_db_id),
     ] = NOTION_DB_ID,
     upload_to_notion: Annotated[
@@ -50,6 +50,8 @@ def sora_upload_to_notion(
             "CHATGPT_USER_AGENT",
         ]
     )
+    # db_id validated by callback and env vars
+    assert db_id is not None, "db_id must be provided"
     asyncio.run(
         sora.upload_to_notion(
             image_folder,
@@ -96,7 +98,7 @@ def chatgpt_upload_to_notion(
         str, typer.Option(help="Path to the folder containing images")
     ] = "chatgpt_images",
     db_id: Annotated[
-        str,
+        str | None,
         typer.Option(help="Notion Database ID", callback=validate_db_id),
     ] = NOTION_DB_ID,
     upload_to_notion: Annotated[
@@ -122,6 +124,8 @@ def chatgpt_upload_to_notion(
             "CHATGPT_COOKIE_STRING_BASE64",
         ]
     )
+    # db_id validated by callback and env vars
+    assert db_id is not None, "db_id must be provided"
     asyncio.run(
         chatgpt.upload_to_notion(
             image_folder=image_folder,

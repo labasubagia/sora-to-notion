@@ -8,6 +8,7 @@ import aiohttp
 from tqdm.asyncio import tqdm
 
 from img import add_prompt_to_images
+from models import ChatGPTImageGeneration
 from notion import is_page_exists_in_db, upload_all_images_to_notion
 from util import (
     MAX_CONCURRENT_DOWNLOADS,
@@ -28,13 +29,13 @@ def get_headers() -> dict[str, str]:
     config = get_config()
     headers = {
         "Authorization": (
-            f"Bearer {config.get('CHATGPT_AUTHORIZATION_TOKEN', '').strip()}"
+            f"Bearer {(config.get('CHATGPT_AUTHORIZATION_TOKEN') or '').strip()}"
         ),
-        "User-Agent": config.get("CHATGPT_USER_AGENT", "").strip(),
+        "User-Agent": (config.get("CHATGPT_USER_AGENT") or "").strip(),
         "Content-Type": "application/json",
     }
 
-    cookie_base64 = config.get("CHATGPT_COOKIE_STRING_BASE64", "").strip()
+    cookie_base64 = (config.get("CHATGPT_COOKIE_STRING_BASE64") or "").strip()
     if cookie_base64:
         headers["Cookie"] = b64decode(cookie_base64).decode("utf-8").strip()
 
@@ -130,7 +131,7 @@ def get_prompt_from_image_node_in_conversation(
     data: dict[str, Any], start_node_id: str, asset_pointer: str
 ) -> str | None:
     mapping = data["mapping"]
-    current_id = start_node_id
+    current_id: str | None = start_node_id
     if current_id not in mapping:
         current_id = get_conversation_mapping_key_by_asset_pointer(data, asset_pointer)
         if current_id is None:
@@ -154,7 +155,7 @@ def get_prompt_from_image_node_in_conversation(
 
 async def fetch_image_generations(
     limit: int = 100,
-) -> list[dict[str, Any]]:
+) -> list[ChatGPTImageGeneration]:
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
     async with aiohttp.ClientSession(timeout=get_http_timeout()) as session:
@@ -165,7 +166,7 @@ async def fetch_image_generations(
 
         async def fetch_generation_details(
             img_gen: dict[str, Any],
-        ) -> dict[str, Any] | None:
+        ) -> ChatGPTImageGeneration | None:
             async with semaphore:
                 try:
                     detail = await get_conversation_details(
@@ -178,15 +179,15 @@ async def fetch_image_generations(
                         img_gen["created_at"], tz=timezone.utc
                     ).isoformat(timespec="microseconds")
                     pbar.write(f"✅ img ID {img_gen['id']}")
-                    return {
-                        "created_at": created_at,
-                        "id": img_gen["id"],
-                        "conversation_id": img_gen["conversation_id"],
-                        "message_id": img_gen["message_id"],
-                        "asset_pointer": img_gen["asset_pointer"],
-                        "url": img_gen["url"],
-                        "prompt": prompt,
-                    }
+                    return ChatGPTImageGeneration(
+                        created_at=created_at,
+                        id=img_gen["id"],
+                        conversation_id=img_gen["conversation_id"],
+                        message_id=img_gen["message_id"],
+                        asset_pointer=img_gen["asset_pointer"],
+                        url=img_gen["url"],
+                        prompt=prompt or "",
+                    )
                 except Exception as e:
                     pbar.write(f"❌ img ID {img_gen['id']} failed: {e}")
                     return None
@@ -202,15 +203,18 @@ async def fetch_image_generations(
         print()
 
         # Filter out None and exceptions
-        generations = [
-            g for g in results if g is not None and not isinstance(g, Exception)
+        valid_generations = [
+            g
+            for g in results
+            if g is not None
+            and not isinstance(g, Exception)
+            and isinstance(g, ChatGPTImageGeneration)
         ]
-        generations = sorted(generations, key=lambda x: x["created_at"])
-        return generations
+        return sorted(valid_generations, key=lambda x: x.created_at)
 
 
 async def download_all_images(
-    generations: list[dict[str, Any]], download_folder: str
+    generations: list[ChatGPTImageGeneration], download_folder: str
 ) -> None:
     total = len(generations)
     pbar = tqdm(total=total, desc="Downloading images")
@@ -220,9 +224,9 @@ async def download_all_images(
         headers=get_headers(), timeout=get_http_timeout()
     ) as session:
 
-        async def download(row: dict[str, Any]):
+        async def download(row: ChatGPTImageGeneration):
             async with semaphore:
-                file_name = f"{row['id']}.png"
+                file_name = f"{row.id}.png"
                 file_path = get_output_path(os.path.join(download_folder, file_name))
 
                 if os.path.exists(file_path):
@@ -232,7 +236,7 @@ async def download_all_images(
 
                 try:
                     await download_image(
-                        session, row["url"], file_path, headers=get_headers()
+                        session, row.url, str(file_path), headers=get_headers()
                     )
                     pbar.write(f"✅ {file_name}")
                 except Exception as e:
@@ -247,9 +251,9 @@ async def download_all_images(
 
 
 async def delete_conversation_of_image_generation_uploaded_to_notion(
-    generations: list[dict[str, Any]], db_id: str
+    generations: list[ChatGPTImageGeneration], db_id: str
 ) -> None:
-    generations = list({gen["conversation_id"]: gen for gen in generations}.values())
+    generations = list({gen.conversation_id: gen for gen in generations}.values())
     total = len(generations)
     pbar = tqdm(total=total, desc="Deleting conversations")
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
@@ -258,10 +262,10 @@ async def delete_conversation_of_image_generation_uploaded_to_notion(
         headers=get_headers(), timeout=get_http_timeout()
     ) as session:
 
-        async def delete(row: dict[str, Any]):
+        async def delete(row: ChatGPTImageGeneration):
             async with semaphore:
-                file_name = f"{row['id']}.png"
-                conversation_id = row["conversation_id"]
+                file_name = f"{row.id}.png"
+                conversation_id = row.conversation_id
 
                 try:
                     exists = await is_page_exists_in_db(session, db_id, file_name)

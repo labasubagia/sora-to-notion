@@ -6,6 +6,7 @@ import aiohttp
 from tqdm.asyncio import tqdm
 
 from img import add_prompt_to_images
+from models import SoraImageGeneration
 from notion import is_page_exists_in_db, upload_all_images_to_notion
 from util import (
     MAX_CONCURRENT_DOWNLOADS,
@@ -79,7 +80,7 @@ async def fetch_recent_tasks(
     before_task_id: str | None = None,
     archived: bool = False,
 ) -> dict[str, Any]:
-    params = {"limit": limit}
+    params: dict[str, Any] = {"limit": limit}
     if before_task_id:
         params["before"] = before_task_id
     if archived:
@@ -100,7 +101,7 @@ async def fetch_list_tasks(
     after_task_id: str | None = None,
     archived: bool = False,
 ) -> dict[str, Any]:
-    params = {"limit": limit}
+    params: dict[str, Any] = {"limit": limit}
     if archived:
         params["archived"] = "true"
     if after_task_id:
@@ -156,7 +157,8 @@ async def delete_empty_tasks() -> None:
     for task in tasks:
         if len(task.get("generations", [])) == 0:
             task_id = task.get("id")
-            empty_tasks.append(task_id)
+            if task_id:
+                empty_tasks.append(task_id)
 
     total = len(empty_tasks)
     pbar = tqdm(total=total, desc="Deleting empty tasks")
@@ -187,21 +189,20 @@ async def delete_empty_tasks() -> None:
 
 def get_generations_from_tasks(
     tasks: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    generations: list[dict[str, Any]] = []
+) -> list[SoraImageGeneration]:
+    generations: list[SoraImageGeneration] = []
     for task in tasks:
         for generation in task.get("generations", []):
             generations.append(
-                {
-                    "created_at": task.get("created_at"),
-                    "id": generation.get("id"),
-                    "task_id": generation.get("task_id"),
-                    "url": generation.get("url"),
-                    "prompt": generation.get("prompt"),
-                }
+                SoraImageGeneration(
+                    created_at=task.get("created_at"),
+                    id=generation.get("id"),
+                    task_id=generation.get("task_id"),
+                    url=generation.get("url"),
+                    prompt=generation.get("prompt") or "",
+                )
             )
-    generations = sorted(generations, key=lambda x: x["created_at"])
-    return generations
+    return sorted(generations, key=lambda x: x.created_at or "")
 
 
 @retry_http()
@@ -218,7 +219,7 @@ async def get_generation_download_url(
 
 
 async def download_all_images(
-    generations: list[dict[str, Any]], download_folder: str = "sora_images"
+    generations: list[SoraImageGeneration], download_folder: str = "sora_images"
 ) -> None:
     total = len(generations)
     pbar = tqdm(total=total, desc="Downloading images")
@@ -226,10 +227,10 @@ async def download_all_images(
 
     async with aiohttp.ClientSession(timeout=get_http_timeout()) as session:
 
-        async def download(generation: dict[str, Any]):
+        async def download(generation: SoraImageGeneration):
             async with semaphore:
-                generation_id = generation["id"]
-                url = generation["url"]
+                generation_id = generation.id
+                url = generation.url
                 file_name = f"{generation_id}.png"
                 file_path = get_output_path(os.path.join(download_folder, file_name))
 
@@ -239,7 +240,7 @@ async def download_all_images(
                     return
 
                 try:
-                    await download_image(session, url, file_path)
+                    await download_image(session, url or "", str(file_path))
                     pbar.write(f"✅ {file_name}")
                 except Exception as e:
                     pbar.write(f"❌ {file_name} failed: {e}")
@@ -262,7 +263,7 @@ async def delete_generation(session: aiohttp.ClientSession, id: str) -> dict[str
         return json_data
 
 
-async def delete_generations(generations: list[dict[str, Any]]) -> None:
+async def delete_generations(generations: list[SoraImageGeneration]) -> None:
     total = len(generations)
     pbar = tqdm(total=total, desc="Deleting generations")
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
@@ -271,9 +272,9 @@ async def delete_generations(generations: list[dict[str, Any]]) -> None:
         headers=get_headers(), timeout=get_http_timeout()
     ) as session:
 
-        async def delete(generation: dict[str, Any]):
+        async def delete(generation: SoraImageGeneration):
             async with semaphore:
-                generation_id = generation.get("id")
+                generation_id = generation.id
                 try:
                     await delete_generation(session, generation_id)
                     pbar.write(f"✅ {generation_id}")
@@ -289,7 +290,7 @@ async def delete_generations(generations: list[dict[str, Any]]) -> None:
 
 
 async def delete_generations_already_uploaded_to_notion(
-    generations: list[dict[str, Any]],
+    generations: list[SoraImageGeneration],
     db_id: str,
 ) -> None:
     total = len(generations)
@@ -298,9 +299,9 @@ async def delete_generations_already_uploaded_to_notion(
 
     async with aiohttp.ClientSession(timeout=get_http_timeout()) as session:
 
-        async def delete(generation: dict[str, Any]):
+        async def delete(generation: SoraImageGeneration):
             async with semaphore:
-                generation_id = generation.get("id")
+                generation_id = generation.id
                 file_name = f"{generation_id}.png"
 
                 try:
@@ -323,7 +324,7 @@ async def delete_generations_already_uploaded_to_notion(
 
 
 async def trash_generations_already_uploaded_to_notion(
-    generations: list[dict[str, Any]],
+    generations: list[SoraImageGeneration],
     db_id: str,
 ) -> None:
     total = len(generations)
@@ -332,9 +333,9 @@ async def trash_generations_already_uploaded_to_notion(
 
     async with aiohttp.ClientSession(timeout=get_http_timeout()) as session:
 
-        async def trash(generation: dict[str, Any]):
+        async def trash(generation: SoraImageGeneration):
             async with semaphore:
-                generation_id = generation.get("id")
+                generation_id = generation.id
                 file_name = f"{generation_id}.png"
 
                 try:
