@@ -156,6 +156,11 @@ class TestNotionUpload:
         result = await send_upload_img(mock_aiohttp_session, "upload_123", str(img_path))
         assert result is not None
 
+    async def test_send_upload_img_file_not_found(self, mock_aiohttp_session):
+        """Should raise FileNotFoundError when file does not exist."""
+        with pytest.raises(FileNotFoundError, match="File not found"):
+            await send_upload_img(mock_aiohttp_session, "upload_123", "/nonexistent/file.png")
+
     async def test_add_page_to_db(self, mock_aiohttp_session, sample_image_bytes, tmp_path):
         """Should add page to database."""
         img_path = tmp_path / "test.png"

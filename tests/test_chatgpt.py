@@ -311,6 +311,27 @@ class TestChatGPTPromptExtraction:
         )
         assert prompt is None
 
+    def test_get_prompt_returns_none_when_node_not_in_mapping(self):
+        """Should return None when start_node_id not in mapping and asset lookup fails."""
+        data = {
+            "mapping": {
+                "node1": {
+                    "message": {
+                        "author": {"role": "user"},
+                        "content": {"parts": ["Some prompt"]},
+                    },
+                    "parent": None,
+                }
+            }
+        }
+
+        # start_node_id="nonexistent" is not in mapping
+        # and asset_pointer won't be found either
+        prompt = get_prompt_from_image_node_in_conversation(
+            data, "nonexistent", "missing_asset"
+        )
+        assert prompt is None
+
     def test_get_conversation_mapping_key_by_asset_pointer(self):
         """Should find node by asset_pointer."""
         data = {
@@ -334,6 +355,60 @@ class TestChatGPTPromptExtraction:
 
         key = get_conversation_mapping_key_by_asset_pointer(data, "asset_456")
         assert key is None
+
+    def test_get_conversation_mapping_key_message_not_dict(self):
+        """Should continue when message is not a dict."""
+        data = {
+            "mapping": {
+                "node1": {"message": "not_a_dict"},
+                "node2": {
+                    "message": {
+                        "content": {
+                            "parts": [{"asset_pointer": "asset_123"}]
+                        }
+                    }
+                }
+            }
+        }
+
+        key = get_conversation_mapping_key_by_asset_pointer(data, "asset_123")
+        assert key == "node2"
+
+    def test_get_conversation_mapping_key_content_not_dict(self):
+        """Should continue when content is not a dict."""
+        data = {
+            "mapping": {
+                "node1": {"message": {"content": "not_a_dict"}},
+                "node2": {
+                    "message": {
+                        "content": {
+                            "parts": [{"asset_pointer": "asset_123"}]
+                        }
+                    }
+                }
+            }
+        }
+
+        key = get_conversation_mapping_key_by_asset_pointer(data, "asset_123")
+        assert key == "node2"
+
+    def test_get_conversation_mapping_key_parts_not_list(self):
+        """Should continue when parts is not a list."""
+        data = {
+            "mapping": {
+                "node1": {"message": {"content": {"parts": "not_a_list"}}},
+                "node2": {
+                    "message": {
+                        "content": {
+                            "parts": [{"asset_pointer": "asset_123"}]
+                        }
+                    }
+                }
+            }
+        }
+
+        key = get_conversation_mapping_key_by_asset_pointer(data, "asset_123")
+        assert key == "node2"
 
 
 @pytest.mark.integration
