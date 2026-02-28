@@ -1,7 +1,6 @@
 """
 Unit tests for util.py - pure functions, no external dependencies.
 """
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -122,6 +121,12 @@ class TestShouldRetryHttp:
         err = aiohttp.ClientError()
         err.status = 502
         assert should_retry_http(err) is True
+
+    def test_client_error_with_non_retryable_status(self):
+        """ClientError with non-retryable status should not retry."""
+        err = aiohttp.ClientError()
+        err.status = 404
+        assert should_retry_http(err) is False
 
     def test_client_error_without_status(self):
         """ClientError without status should retry."""
