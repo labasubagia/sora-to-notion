@@ -330,3 +330,49 @@ uv run pre-commit run --all-files
 - API interactions should be mocked in tests
 - Maintain >80% code coverage
 - All tests must pass before merging
+
+## Makefile
+
+A `Makefile` is provided to run the most common CLI workflows (these mirror the debug configurations in `.vscode/launch.json`). The Makefile prefers the project's virtualenv Python at `.venv/bin/python` when present; you can override the interpreter with the `PY` variable.
+
+Common targets:
+
+```bash
+# Show available targets
+make help
+
+# ChatGPT upload to Notion (no remove)
+make chatgpt_upload_to_notion
+
+# ChatGPT upload to Notion (remove in ChatGPT)
+make chatgpt_upload_to_notion_remove
+
+# Sora cleanup and tasks
+make sora_cleanup_trash
+make sora_cleanup_tasks
+
+# Sora upload to Notion variants
+make sora_upload_to_notion
+make sora_upload_to_notion_trash
+make sora_upload_to_notion_remove
+
+# Run the module-style utility target
+make clean-output-path
+```
+
+Examples:
+
+```bash
+# Use the project's .venv python automatically (if present)
+make chatgpt_upload_to_notion
+
+# Force a specific Python interpreter
+make PY=/usr/bin/python3 sora_upload_to_notion
+```
+
+If you want an activation-style shell (to export environment variables for multiple commands), activate the venv then run Make targets:
+
+```bash
+source .venv/bin/activate
+make sora_upload_to_notion
+```
