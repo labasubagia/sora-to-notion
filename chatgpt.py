@@ -298,6 +298,10 @@ async def upload_to_notion(
 ) -> None:
     generations = await fetch_image_generations(limit=limit)
 
+    if not generations:
+        print("No generations found.")
+        return
+
     if dataset:
         save_to_dataset(dataset=dataset, data=generations)
 

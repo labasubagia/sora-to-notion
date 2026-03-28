@@ -376,6 +376,10 @@ async def upload_to_notion(
     tasks = data.get("task_responses", [])
     generations = get_generations_from_tasks(tasks)
 
+    if not generations:
+        print("No generations found.")
+        return
+
     if dataset:
         save_to_dataset(dataset=dataset, data=generations)
 
